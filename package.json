@@ -1,0 +1,25 @@
+{
+  "name": "hawking-radiation-simulator-pro",
+  "version": "1.0.0",
+  "description": "Hawking Radiation Simulator with Spectrum, Species & Lensing",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "python-api": "python api/server.py"
+  },
+  "keywords": [
+    "hawking-radiation",
+    "black-hole",
+    "physics-simulation",
+    "webgl",
+    "three.js"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {}
+}
+

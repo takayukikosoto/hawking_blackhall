@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hawking Radiation Simulator — Spectrum, Species & Lensing</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js"></script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div class="ui-header">
+      <h1>Hawking Radiation Simulator <small>Pro</small></h1>
+      <button id="toggleUI" class="toggle-btn" title="Toggle Settings">⚙</button>
+    </div>
+    <div id="uiContent" class="ui-content">
+      <div class="grid">
+      <div class="card">
+        <h3>Black Hole</h3>
+        <label>Mass (M<sub>☉</sub>)</label>
+        <input id="massSlider" type="range" min="1e-10" max="50" step="1e-10" value="10">
+        <input id="massNumber" type="number" min="1e-10" max="50" step="0.1" value="10">
+        <div class="kv"><span>r<sub>s</sub></span><b id="rsMeters">—</b><span>m</span></div>
+        <div class="kv"><span>T<sub>H</sub></span><b id="tKelvin">—</b><span>K</span></div>
+        <div class="kv"><span>Power ∝</span><b id="pRel">—</b><span>1/M²</span></div>
+      </div>
+      <div class="card">
+        <h3>Emission</h3>
+        <label>Pair creation intensity</label>
+        <input id="pairRate" type="range" min="0" max="1" step="0.001" value="0.45">
+        <div class="kv"><span>rate</span><b id="pairRateLabel">0.45</b></div>
+        <label>Particles (max)</label>
+        <input id="maxParticles" type="range" min="10000" max="200000" step="5000" value="100000">
+        <div class="kv"><span>count</span><b id="maxParticlesLabel">100000</b></div>
+        <label>Species (γ / ν / g)</label>
+        <div class="row">
+          <input id="fPhoton" type="range" min="0" max="1" step="0.01" value="0.70">
+          <input id="fNeutrino" type="range" min="0" max="1" step="0.01" value="0.25">
+          <input id="fGraviton" type="range" min="0" max="1" step="0.01" value="0.05">
+        </div>
+        <small>自動正規化します。</small>
+      </div>
+      <div class="card">
+        <h3>Lensing</h3>
+        <label>Enable gravitational lens</label>
+        <input id="lensEnable" type="checkbox" checked>
+        <label>Lens strength</label>
+        <input id="lensStrength" type="range" min="0" max="2" step="0.001" value="0.65">
+        <div class="kv"><span>strength</span><b id="lensStrengthLabel">0.65</b></div>
+        <label>Chromatic aberration</label>
+        <input id="lensChrom" type="range" min="0" max="3" step="0.001" value="0.25">
+      </div>
+      <div class="card">
+        <h3>Controls</h3>
+        <div class="row">
+          <button id="resetBtn">Reset</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="screenshotBtn">Screenshot</button>
+        </div>
+        <p class="note">
+          可視化用に物理を簡略化。T<sub>H</sub>に比例した黒体近似の擬似サンプルからエネルギーを引き、
+          種別ごとに色・寿命・散逸を変えています。重力レンズはスクリーンスペース近似。
+        </p>
+      </div>
+    </div>
+    </div>
+  </div>
+</body>
+</html>

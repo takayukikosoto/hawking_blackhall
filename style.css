@@ -1,0 +1,27 @@
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#05070b;color:#e7eaef;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+#c{position:fixed;inset:0;display:block}
+#ui{position:fixed;top:12px;left:12px;right:12px;max-width:980px;background:rgba(10,12,18,.4);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.04);
+  padding:10px 14px;border-radius:14px;z-index:10;transition:background 0.3s ease,backdrop-filter 0.3s ease}
+#ui:hover{background:rgba(10,12,18,.65);backdrop-filter:blur(16px)}
+.ui-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.2px;opacity:.9}
+h1 small{opacity:.6;font-weight:600}
+.toggle-btn{background:rgba(16,24,38,.6);border:1px solid rgba(42,53,80,.4);color:#dfe6ff;padding:4px 10px;border-radius:8px;cursor:pointer;font-size:16px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;opacity:.7}
+.toggle-btn:hover{background:rgba(21,32,54,.8);opacity:1;transform:rotate(90deg)}
+.ui-content{max-height:2000px;transition:max-height 0.4s ease,opacity 0.3s ease,transform 0.3s ease,visibility 0.3s ease;overflow:hidden;visibility:visible}
+#ui.collapsed .ui-content{max-height:0;opacity:0;transform:translateY(-10px);pointer-events:none;visibility:hidden}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media (max-width:1100px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:680px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid rgba(32,42,64,.5);border-radius:12px;padding:10px 12px;background:rgba(8,10,16,.4);transition:background 0.2s ease}
+.card:hover{background:rgba(8,10,16,.6)}
+h3{margin:0 0 8px 0;font-size:14px;opacity:.9}
+label{display:block;font-size:12px;opacity:.85;margin:6px 0 2px}
+input[type="range"]{width:100%}
+input[type="number"]{width:120px;background:rgba(16,24,38,.4);border:1px solid rgba(42,53,80,.3);color:#e7eaef;padding:4px 8px;border-radius:6px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.kv{display:flex;gap:6px;align-items:baseline;margin-top:4px;font-size:11px;opacity:.8}
+.kv b{font-variant-numeric:tabular-nums}
+button{background:rgba(16,24,38,.6);border:1px solid rgba(42,53,80,.4);color:#dfe6ff;padding:6px 10px;border-radius:10px;cursor:pointer;transition:all 0.2s ease;opacity:.85}
+button:hover{background:rgba(21,32,54,.8);opacity:1;transform:translateY(-1px)}
+.note{margin-top:10px;font-size:11px;opacity:.7;line-height:1.5}
