@@ -3,6 +3,16 @@ import {G,c,hbar,kB,h,M_sun,schwarzschildRadius,hawkingTemperature,relativePower
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+// API設定
+const API_BASE_URL = 'http://localhost:8001';
+let useAPI = true; // APIを使用するかどうか（フォールバック用）
+
+// API結果のキャッシュ（パフォーマンス最適化）
+let metricsCache = null;
+let spawnRateCache = null;
+let cacheTime = 0;
+const CACHE_DURATION = 100; // 100ms間キャッシュ（毎フレーム呼ばないように）
+
 // ---------- DOM ----------
 const canvas = document.getElementById('c');
 const massSlider = document.getElementById('massSlider');
@@ -28,9 +38,16 @@ const pauseBtn = document.getElementById('pauseBtn');
 const screenshotBtn = document.getElementById('screenshotBtn');
 const toggleUI = document.getElementById('toggleUI');
 const ui = document.getElementById('ui');
+const viewMode = document.getElementById('viewMode');
+const sectionPlane = document.getElementById('sectionPlane');
+const showGravityWell = document.getElementById('showGravityWell');
+const showSpacetimeGrid = document.getElementById('showSpacetimeGrid');
+const showHorizonHalo = document.getElementById('showHorizonHalo');
 
 let paused = false;
 let uiCollapsed = false;
+let isCrossSectionMode = false;
+let currentSectionPlane = 'xy';
 
 // UI折り畳み機能
 toggleUI.addEventListener('click', ()=>{
@@ -51,12 +68,143 @@ renderer.setSize(innerWidth, innerHeight);
 
 const scene = new THREE.Scene();
 
+// カメラ（3Dビュー用）
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.01, 1e9);
 camera.position.set(0, 15, 42);
+
+// 断面ビュー用の正投影カメラ
+let orthoCamera = null;
+let gridHelper = null;
+let sectionHelper = null;
+
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.minDistance = 10;
 controls.maxDistance = 200;
+
+// 断面モードの設定
+function setupCrossSectionMode(){
+  // 正投影カメラを作成
+  const viewSize = 50;
+  orthoCamera = new THREE.OrthographicCamera(
+    -viewSize, viewSize, viewSize, -viewSize, 0.1, 1000
+  );
+  
+  // グリッドヘルパーを作成
+  gridHelper = new THREE.GridHelper(100, 50, 0x444444, 0x222222);
+  gridHelper.visible = false;
+  scene.add(gridHelper);
+  
+  // 断面平面のヘルパー（透明度のある平面）
+  const sectionGeometry = new THREE.PlaneGeometry(100, 100);
+  const sectionMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00ff00,
+    transparent: true,
+    opacity: 0.1,
+    side: THREE.DoubleSide,
+    wireframe: true
+  });
+  sectionHelper = new THREE.Mesh(sectionGeometry, sectionMaterial);
+  sectionHelper.visible = false;
+  scene.add(sectionHelper);
+}
+
+setupCrossSectionMode();
+
+function updateCrossSectionView(){
+  if(!isCrossSectionMode || !gridHelper || !sectionHelper || !orthoCamera) {
+    if(gridHelper) gridHelper.visible = false;
+    if(sectionHelper) sectionHelper.visible = false;
+    return;
+  }
+  
+  gridHelper.visible = true;
+  sectionHelper.visible = true;
+  
+  const viewSize = 50;
+  const viewDistance = 30;
+  
+  // 平面に応じてカメラ位置とグリッドの向きを設定
+  switch(currentSectionPlane){
+    case 'xy': // 上から見る（Z軸方向）
+      orthoCamera.left = -viewSize;
+      orthoCamera.right = viewSize;
+      orthoCamera.top = viewSize;
+      orthoCamera.bottom = -viewSize;
+      orthoCamera.position.set(0, 0, viewDistance);
+      orthoCamera.lookAt(0, 0, 0);
+      gridHelper.rotation.x = 0;
+      gridHelper.rotation.y = 0;
+      gridHelper.rotation.z = 0;
+      sectionHelper.rotation.x = 0;
+      sectionHelper.rotation.y = 0;
+      sectionHelper.rotation.z = 0;
+      sectionHelper.position.set(0, 0, 0);
+      break;
+      
+    case 'xz': // 前から見る（Y軸方向）
+      orthoCamera.left = -viewSize;
+      orthoCamera.right = viewSize;
+      orthoCamera.top = viewSize;
+      orthoCamera.bottom = -viewSize;
+      orthoCamera.position.set(0, viewDistance, 0);
+      orthoCamera.lookAt(0, 0, 0);
+      gridHelper.rotation.x = Math.PI / 2;
+      gridHelper.rotation.y = 0;
+      gridHelper.rotation.z = 0;
+      sectionHelper.rotation.x = Math.PI / 2;
+      sectionHelper.rotation.y = 0;
+      sectionHelper.rotation.z = 0;
+      sectionHelper.position.set(0, 0, 0);
+      break;
+      
+    case 'yz': // 横から見る（X軸方向）
+      orthoCamera.left = -viewSize;
+      orthoCamera.right = viewSize;
+      orthoCamera.top = viewSize;
+      orthoCamera.bottom = -viewSize;
+      orthoCamera.position.set(viewDistance, 0, 0);
+      orthoCamera.lookAt(0, 0, 0);
+      gridHelper.rotation.x = 0;
+      gridHelper.rotation.y = Math.PI / 2;
+      gridHelper.rotation.z = 0;
+      sectionHelper.rotation.x = 0;
+      sectionHelper.rotation.y = Math.PI / 2;
+      sectionHelper.rotation.z = 0;
+      sectionHelper.position.set(0, 0, 0);
+      break;
+  }
+  
+  orthoCamera.updateProjectionMatrix();
+}
+
+viewMode.addEventListener('change', ()=>{
+  isCrossSectionMode = viewMode.value === 'cross-section';
+  updateCrossSectionView();
+  if(isCrossSectionMode){
+    controls.enabled = false; // 断面モードではコントロールを無効化
+  } else {
+    controls.enabled = true;
+  }
+});
+
+sectionPlane.addEventListener('change', ()=>{
+  currentSectionPlane = sectionPlane.value;
+  updateCrossSectionView();
+});
+
+// 可視化要素の表示/非表示制御
+showGravityWell.addEventListener('change', ()=>{
+  if(gravityWellMesh) gravityWellMesh.visible = showGravityWell.checked;
+});
+
+showSpacetimeGrid.addEventListener('change', ()=>{
+  if(spacetimeGrid) spacetimeGrid.visible = showSpacetimeGrid.checked;
+});
+
+showHorizonHalo.addEventListener('change', ()=>{
+  if(horizonHalo) horizonHalo.visible = showHorizonHalo.checked;
+});
 
 // ---------- Lighting ----------
 scene.add(new THREE.DirectionalLight(0xffffff, 1.6)).position.set(10,20,10);
@@ -71,6 +219,19 @@ const bhMat = new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 1, ro
 const bhMesh = new THREE.Mesh(bhGeom, bhMat);
 bhGroup.add(bhMesh);
 
+// 事象の地平線のハロー（概念的な表現、控えめに）
+const horizonGeom = new THREE.SphereGeometry(1.02, 64, 64);
+const horizonMat = new THREE.MeshBasicMaterial({
+  color: 0x444466, // オレンジからグレー・青系に変更
+  transparent: true,
+  opacity: 0.08, // より透明に
+  side: THREE.BackSide,
+  wireframe: false
+});
+const horizonHalo = new THREE.Mesh(horizonGeom, horizonMat);
+horizonHalo.visible = false; // デフォルトで非表示
+bhGroup.add(horizonHalo);
+
 const diskGeom = new THREE.RingGeometry(1.2, 8.0, 256, 1);
 const diskMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false,
@@ -84,6 +245,153 @@ const diskMat = new THREE.ShaderMaterial({
 });
 const disk = new THREE.Mesh(diskGeom, diskMat);
 disk.rotation.x = -Math.PI/2; bhGroup.add(disk);
+
+// ---------- 重力ポテンシャルメッシュ（重力の井戸の可視化） ----------
+let gravityWellMesh = null;
+let spacetimeGrid = null;
+
+function createGravityWellMesh(rsVisual) {
+  if (gravityWellMesh) {
+    scene.remove(gravityWellMesh);
+    gravityWellMesh.geometry.dispose();
+    gravityWellMesh.material.dispose();
+  }
+  
+  const segments = 64;
+  const radius = 25.0;
+  const geometry = new THREE.BufferGeometry();
+  const vertices = [];
+  const colors = [];
+  const indices = [];
+  
+  // 極座標でメッシュを生成
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * Math.PI * 2;
+    for (let j = 0; j <= segments; j++) {
+      const phi = (j / segments) * Math.PI;
+      const r_base = radius * (0.3 + 0.7 * (j / segments));
+      
+      // 重力ポテンシャルに基づく高さ（z方向の歪み）
+      const r_from_bh = Math.sqrt(r_base * r_base + (rsVisual * 2) * (rsVisual * 2));
+      const potential = -1.0 / (r_from_bh + rsVisual * 0.5);
+      const height = potential * 8.0; // 視覚的なスケール
+      
+      const x = r_base * Math.sin(phi) * Math.cos(theta);
+      const y = r_base * Math.sin(phi) * Math.sin(theta);
+      const z = height;
+      
+      vertices.push(x, y, z);
+      
+      // 距離に応じた色（控えめなグレー・青系）
+      const distFactor = Math.min(1.0, r_from_bh / (radius * 2));
+      colors.push(
+        0.15 + 0.15 * (1.0 - distFactor), // R（低く）
+        0.15 + 0.15 * distFactor,         // G
+        0.2 + 0.2 * distFactor            // B（青系）
+      );
+    }
+  }
+  
+  // インデックス生成
+  for (let i = 0; i < segments; i++) {
+    for (let j = 0; j < segments; j++) {
+      const a = i * (segments + 1) + j;
+      const b = a + segments + 1;
+      indices.push(a, b, a + 1);
+      indices.push(b, b + 1, a + 1);
+    }
+  }
+  
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.15, // より透明に
+    wireframe: false,
+    side: THREE.DoubleSide
+  });
+  
+  gravityWellMesh = new THREE.Mesh(geometry, material);
+  gravityWellMesh.rotation.x = Math.PI / 2; // XY平面に配置
+  gravityWellMesh.visible = false; // デフォルトで非表示
+  scene.add(gravityWellMesh);
+}
+
+// ---------- 時空の歪みを表現するグリッド ----------
+function createSpacetimeGrid(rsVisual) {
+  if (spacetimeGrid) {
+    scene.remove(spacetimeGrid);
+    spacetimeGrid.geometry.dispose();
+    spacetimeGrid.material.dispose();
+  }
+  
+  const gridSize = 30;
+  const divisions = 40;
+  const geometry = new THREE.BufferGeometry();
+  const vertices = [];
+  const colors = [];
+  
+  // グリッド線を生成
+  for (let i = 0; i <= divisions; i++) {
+    const x = (i / divisions - 0.5) * gridSize;
+    for (let j = 0; j <= divisions; j++) {
+      const y = (j / divisions - 0.5) * gridSize;
+      const r = Math.sqrt(x * x + y * y);
+      
+      // 重力による空間の歪み（z方向の変位）
+      const potential = -1.0 / (r + rsVisual * 0.5);
+      const z = potential * 3.0;
+      
+      vertices.push(x, y, z);
+      
+      // 歪みに応じた色（控えめなグレー・青系）
+      const distortion = Math.min(1.0, Math.abs(z) / 2.0);
+      colors.push(
+        0.2 + 0.2 * distortion,           // R（低く）
+        0.25 + 0.25 * (1.0 - distortion), // G
+        0.3 + 0.3 * distortion            // B（青系）
+      );
+    }
+  }
+  
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  
+  // 線のインデックス
+  const indices = [];
+  for (let i = 0; i <= divisions; i++) {
+    for (let j = 0; j < divisions; j++) {
+      const a = i * (divisions + 1) + j;
+      const b = a + 1;
+      indices.push(a, b);
+    }
+  }
+  for (let j = 0; j <= divisions; j++) {
+    for (let i = 0; i < divisions; i++) {
+      const a = i * (divisions + 1) + j;
+      const b = a + divisions + 1;
+      indices.push(a, b);
+    }
+  }
+  
+  geometry.setIndex(indices);
+  
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.12, // より透明に
+    linewidth: 1
+  });
+  
+  spacetimeGrid = new THREE.LineSegments(geometry, material);
+  spacetimeGrid.rotation.x = Math.PI / 2; // XY平面に配置
+  spacetimeGrid.visible = false; // デフォルトで非表示
+  scene.add(spacetimeGrid);
+}
 
 // Star background
 const starGeo = new THREE.SphereGeometry(500, 32, 32);
@@ -171,7 +479,7 @@ async function setupParticleSystem(){
     depthWrite: false, 
     blending: THREE.AdditiveBlending,
     uniforms: { 
-      uPointSize: {value: 16.0} // 小さめの粒子で大量に表示
+      uPointSize: {value: 20.0} // パーティクルを少し大きくして視認性向上
     },
     vertexShader: particleRenderVS,
     fragmentShader: `precision highp float; 
@@ -191,8 +499,10 @@ async function setupParticleSystem(){
   console.log('Particle system created');
   
   // 初期パーティクルを生成（ペアで生成）
-  function initializeParticles(){
-    const temp = hawkingTemperature(BH_Mass_kg);
+  async function initializeParticles(){
+    // APIから温度を取得
+    const metrics = await fetchBlackHoleMetrics(BH_Mass_solar);
+    const temp = metrics.hawking_temperature_K;
     const initialPairs = Math.min(1000, Math.floor(MAX_PARTICLES / 2)); // ペア数（増やす）
     let spawnedPairs = 0;
     let idx1 = -1, idx2 = -1;
@@ -223,7 +533,11 @@ async function setupParticleSystem(){
   }
   
   // 初期パーティクルを生成
-  initializeParticles();
+  await initializeParticles();
+  
+  // 初期メトリクスを更新
+  await updateBHScale();
+  await updateMetrics();
 }
 
 // ---------- Simulation State ----------
@@ -269,24 +583,128 @@ async function setupPost(){
 }
 await setupPost();
 
-function updateBHScale(){
+// Python APIを使用してブラックホールの物理量を計算
+async function fetchBlackHoleMetrics(massSolar, useCache = true) {
+  const now = Date.now();
+  
+  // キャッシュチェック
+  if (useCache && metricsCache && metricsCache.mass_solar === massSolar && (now - cacheTime) < CACHE_DURATION) {
+    return metricsCache;
+  }
+  
+  if (!useAPI) {
+    // フォールバック: フロントエンドで計算
+    const M_kg = massSolar * M_sun;
+    const result = {
+      mass_solar: massSolar,
+      mass_kg: M_kg,
+      schwarzschild_radius_m: schwarzschildRadius(M_kg),
+      hawking_temperature_K: hawkingTemperature(M_kg),
+      relative_power: relativePowerVsSolar(M_kg)
+    };
+    metricsCache = result;
+    cacheTime = now;
+    return result;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/blackhole/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mass_solar: massSolar })
+    });
+    
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    const result = await response.json();
+    metricsCache = result;
+    cacheTime = now;
+    return result;
+  } catch (error) {
+    console.warn('API request failed, using fallback calculation:', error);
+    useAPI = false; // 一度失敗したらフォールバックに切り替え
+    return fetchBlackHoleMetrics(massSolar, useCache); // 再帰的にフォールバックを呼び出し
+  }
+}
+
+// Python APIを使用してパーティクル生成率を計算
+async function fetchSpawnRate(massSolar, pairRateUI, useCache = true) {
+  const now = Date.now();
+  const cacheKey = `${massSolar}_${pairRateUI}`;
+  
+  // キャッシュチェック
+  if (useCache && spawnRateCache && spawnRateCache.key === cacheKey && (now - cacheTime) < CACHE_DURATION) {
+    return spawnRateCache.data;
+  }
+  
+  if (!useAPI) {
+    // フォールバック: フロントエンドで計算
+    const M_kg = massSolar * M_sun;
+    const relPower = relativePowerVsSolar(M_kg);
+    const baseRate = 500.0;
+    const result = {
+      spawn_rate_per_second: baseRate * pairRateUI * Math.max(0.01, relPower),
+      relative_power: relPower,
+      base_rate: baseRate,
+      pair_rate_ui: pairRateUI
+    };
+    spawnRateCache = { key: cacheKey, data: result };
+    cacheTime = now;
+    return result;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/particles/spawn-rate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        mass_solar: massSolar,
+        pair_rate_ui: pairRateUI 
+      })
+    });
+    
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    const result = await response.json();
+    spawnRateCache = { key: cacheKey, data: result };
+    cacheTime = now;
+    return result;
+  } catch (error) {
+    console.warn('API request failed, using fallback calculation:', error);
+    useAPI = false;
+    return fetchSpawnRate(massSolar, pairRateUI, useCache);
+  }
+}
+
+async function updateBHScale(){
   BH_Mass_kg = BH_Mass_solar * M_sun;
-  rs_m = schwarzschildRadius(BH_Mass_kg);
-  const rs_ref = schwarzschildRadius(10 * M_sun);
+  
+  // APIからシュヴァルツシルト半径を取得（キャッシュなしで最新値を取得）
+  const metrics = await fetchBlackHoleMetrics(BH_Mass_solar, false);
+  rs_m = metrics.schwarzschild_radius_m;
+  
+  // 参照値（10太陽質量）のシュヴァルツシルト半径を計算
+  const rs_ref_metrics = await fetchBlackHoleMetrics(10, false);
+  const rs_ref = rs_ref_metrics.schwarzschild_radius_m;
+  
   const s = (rs_m / rs_ref) * RS_BASE_VISUAL;
   bhMesh.scale.setScalar(s);
   disk.scale.setScalar(s * 1.0);
+  horizonHalo.scale.setScalar(s * 1.02);
+  
+  // 重力ポテンシャルメッシュと時空グリッドを更新
+  createGravityWellMesh(s);
+  createSpacetimeGrid(s);
+  
+  // キャッシュをクリア（質量が変わったので）
+  metricsCache = null;
+  spawnRateCache = null;
 }
-updateBHScale();
 
-function updateMetrics(){
-  const tK = hawkingTemperature(BH_Mass_kg);
-  const pRel = relativePowerVsSolar(BH_Mass_kg);
-  rsMetersEl.textContent = rs_m.toExponential(3);
-  tKelvinEl.textContent = tK.toExponential(3);
-  pRelEl.textContent = pRel.toExponential(3);
+async function updateMetrics(){
+  const metrics = await fetchBlackHoleMetrics(BH_Mass_solar, false);
+  rsMetersEl.textContent = metrics.schwarzschild_radius_m.toExponential(3);
+  tKelvinEl.textContent = metrics.hawking_temperature_K.toExponential(3);
+  pRelEl.textContent = metrics.relative_power.toExponential(3);
 }
-updateMetrics();
 
 // ---------- Helpers ----------
 function normSpecies(){
@@ -445,14 +863,16 @@ function spawnParticleAt(i, tempK){
   }
 }
 
-function spawnParticles(dt){
+async function spawnParticles(dt){
   const rateUI = parseFloat(pairRate.value);
-  const relPower = relativePowerVsSolar(BH_Mass_kg);
-  const temp = hawkingTemperature(BH_Mass_kg);
   
-  // 生成率の計算：ペア生成なので、ペア数で計算
-  const baseRate = 500.0; // ペア生成率（増やす）
-  const rate = baseRate * rateUI * Math.max(0.01, relPower);
+  // APIから生成率と温度を取得
+  const spawnData = await fetchSpawnRate(BH_Mass_solar, rateUI);
+  const rate = spawnData.spawn_rate_per_second;
+  
+  // 温度もAPIから取得
+  const metrics = await fetchBlackHoleMetrics(BH_Mass_solar);
+  const temp = metrics.hawking_temperature_K;
   
   spawnAccumulator += rate * dt;
   let pairsToSpawn = Math.floor(spawnAccumulator);
@@ -572,6 +992,14 @@ addEventListener('resize', ()=>{
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
+  if(orthoCamera){
+    const viewSize = 50;
+    orthoCamera.left = -viewSize * (innerWidth/innerHeight);
+    orthoCamera.right = viewSize * (innerWidth/innerHeight);
+    orthoCamera.top = viewSize;
+    orthoCamera.bottom = -viewSize;
+    orthoCamera.updateProjectionMatrix();
+  }
   if (rt){
     rt.setSize(innerWidth, innerHeight);
     lensMaterial.uniforms.uResolution.value.set(innerWidth, innerHeight);
@@ -579,12 +1007,12 @@ addEventListener('resize', ()=>{
 });
 
 // ---------- UI ----------
-function syncMassInputs(from){
+async function syncMassInputs(from){
   if (from==='slider'){ massNumber.value = parseFloat(massSlider.value); }
   if (from==='number'){ massSlider.value = parseFloat(massNumber.value); }
   BH_Mass_solar = parseFloat(massSlider.value);
-  updateBHScale();
-  updateMetrics();
+  await updateBHScale();
+  await updateMetrics();
 }
 massSlider.addEventListener('input', ()=>syncMassInputs('slider'));
 massNumber.addEventListener('input', ()=>syncMassInputs('number'));
@@ -667,11 +1095,22 @@ function tick(now){
 
   controls.update();
 
+  // 断面モードの更新
+  updateCrossSectionView();
+
   // render to RT then lens
   renderer.setRenderTarget(rt);
-  renderer.render(scene, camera);
+  
+  // 断面モードの場合は正投影カメラを使用
+  const activeCamera = isCrossSectionMode ? orthoCamera : camera;
+  renderer.render(scene, activeCamera);
+  
   renderer.setRenderTarget(null);
-  updateLensUniforms();
+  
+  // 断面モードでは重力レンズ効果を無効化
+  if(!isCrossSectionMode){
+    updateLensUniforms();
+  }
   renderer.render(postScene, postCam);
 }
 requestAnimationFrame(tick);

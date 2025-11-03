@@ -41,12 +41,18 @@ npm start
 別のターミナルで：
 
 ```bash
-python api/server.py
+# FastAPI版（推奨）
+npm run api
 # または
-npm run python-api
+uvicorn api.server:app --host 0.0.0.0 --port 8001 --reload
+
+# 旧Flask版（互換性のため残しています）
+python api/server.py
 ```
 
-APIサーバーは `http://localhost:5000` で起動します。
+APIサーバーは `http://localhost:8001` で起動します。
+- **Swagger UI**: http://localhost:8001/docs
+- **ReDoc**: http://localhost:8001/redoc
 
 ## 🎮 使い方
 

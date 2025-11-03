@@ -66,6 +66,25 @@
           <button id="pauseBtn">Pause</button>
           <button id="screenshotBtn">Screenshot</button>
         </div>
+                <label>View Mode</label>
+                <select id="viewMode">
+                  <option value="3d">3D View</option>
+                  <option value="cross-section">Cross Section</option>
+                </select>
+                <label>Cross Section Plane</label>
+                <select id="sectionPlane">
+                  <option value="xy">XY Plane (Top View)</option>
+                  <option value="xz">XZ Plane (Front View)</option>
+                  <option value="yz">YZ Plane (Side View)</option>
+                </select>
+                <label>Visualization</label>
+                <div class="row">
+                  <label><input type="checkbox" id="showGravityWell"> Gravity Well</label>
+                  <label><input type="checkbox" id="showSpacetimeGrid"> Spacetime Grid</label>
+                </div>
+                <div class="row">
+                  <label><input type="checkbox" id="showHorizonHalo"> Event Horizon</label>
+                </div>
         <p class="note">
           可視化用に物理を簡略化。T<sub>H</sub>に比例した黒体近似の擬似サンプルからエネルギーを引き、
           種別ごとに色・寿命・散逸を変えています。重力レンズはスクリーンスペース近似。

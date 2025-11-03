@@ -17,8 +17,11 @@ h1 small{opacity:.6;font-weight:600}
 .card:hover{background:rgba(8,10,16,.6)}
 h3{margin:0 0 8px 0;font-size:14px;opacity:.9}
 label{display:block;font-size:12px;opacity:.85;margin:6px 0 2px}
+label input[type="checkbox"]{margin-right:6px;cursor:pointer}
 input[type="range"]{width:100%}
 input[type="number"]{width:120px;background:rgba(16,24,38,.4);border:1px solid rgba(42,53,80,.3);color:#e7eaef;padding:4px 8px;border-radius:6px}
+select{width:100%;background:rgba(16,24,38,.4);border:1px solid rgba(42,53,80,.3);color:#e7eaef;padding:4px 8px;border-radius:6px;font-size:12px;margin-top:4px}
+select option{background:rgba(8,10,16,.9);color:#e7eaef}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .kv{display:flex;gap:6px;align-items:baseline;margin-top:4px;font-size:11px;opacity:.8}
 .kv b{font-variant-numeric:tabular-nums}
