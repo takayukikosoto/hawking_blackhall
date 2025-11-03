@@ -28,3 +28,9 @@ select option{background:rgba(8,10,16,.9);color:#e7eaef}
 button{background:rgba(16,24,38,.6);border:1px solid rgba(42,53,80,.4);color:#dfe6ff;padding:6px 10px;border-radius:10px;cursor:pointer;transition:all 0.2s ease;opacity:.85}
 button:hover{background:rgba(21,32,54,.8);opacity:1;transform:translateY(-1px)}
 .note{margin-top:10px;font-size:11px;opacity:.7;line-height:1.5}
+.photon-shot-btn{position:fixed;bottom:30px;right:30px;background:linear-gradient(135deg,#00d4ff,#0099ff);border:none;color:#fff;padding:16px 24px;border-radius:16px;cursor:pointer;font-size:16px;font-weight:700;box-shadow:0 4px 20px rgba(0,212,255,.4),0 0 30px rgba(0,153,255,.3);z-index:100;display:flex;align-items:center;gap:10px;transition:all 0.3s ease;text-shadow:0 0 10px rgba(255,255,255,.5)}
+.photon-shot-btn:hover{transform:scale(1.05);box-shadow:0 6px 30px rgba(0,212,255,.6),0 0 40px rgba(0,153,255,.5)}
+.photon-shot-btn:active{transform:scale(0.95)}
+.photon-shot-btn .shot-icon{font-size:24px;animation:pulse 2s ease-in-out infinite}
+.photon-shot-btn .shot-label{letter-spacing:1px}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:0.8}}

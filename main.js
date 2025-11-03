@@ -36,6 +36,7 @@ const lensChrom = document.getElementById('lensChrom');
 const resetBtn = document.getElementById('resetBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const screenshotBtn = document.getElementById('screenshotBtn');
+const photonShotBtn = document.getElementById('photonShotBtn');
 const toggleUI = document.getElementById('toggleUI');
 const ui = document.getElementById('ui');
 const viewMode = document.getElementById('viewMode');
@@ -1045,6 +1046,234 @@ resetBtn.addEventListener('click', ()=>{
 pauseBtn.addEventListener('click', ()=>{ paused=!paused; pauseBtn.textContent = paused? 'Resume' : 'Pause'; });
 screenshotBtn.addEventListener('click', ()=>{ const dataURL = renderer.domElement.toDataURL('image/png'); const a=document.createElement('a'); a.href=dataURL; a.download='hawking-sim.png'; a.click(); });
 
+// ---------- フォトンショット発射機能（派手なビーム表示） ----------
+let currentPhotonBeam = null;
+let photonBeamAge = 0;
+const PHOTON_BEAM_LIFETIME = 2.5; // 2.5秒で消える（より長く見えるように）
+
+function firePhotonShot() {
+  // ボタンの派手なアニメーション効果
+  photonShotBtn.style.transform = 'scale(0.85)';
+  photonShotBtn.style.boxShadow = '0 0 50px rgba(0,212,255,.8), 0 0 100px rgba(0,153,255,.6)';
+  setTimeout(() => {
+    photonShotBtn.style.transform = '';
+    photonShotBtn.style.boxShadow = '';
+  }, 150);
+  
+  // 既存のビームがあれば削除
+  if (currentPhotonBeam) {
+    scene.remove(currentPhotonBeam);
+    currentPhotonBeam.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material && child.material.dispose) child.material.dispose();
+    });
+  }
+  
+  // カメラの方向からフォトンを発射
+  const direction = new THREE.Vector3(0, 0, -1);
+  direction.applyQuaternion(camera.quaternion);
+  
+  // カメラ位置から少し前方から発射
+  const startPos = camera.position.clone();
+  const forward = direction.clone().multiplyScalar(8); // より遠くから
+  startPos.add(forward);
+  
+  // フォトンの軌道を計算して超派手なビームで表示
+  currentPhotonBeam = createPhotonBeam(startPos, direction);
+  photonBeamAge = 0;
+}
+
+function createPhotonBeam(startPos, direction) {
+  const points = [];
+  const steps = 400; // より多くのステップで滑らかに
+  const stepSize = 0.25;
+  
+  let pos = startPos.clone();
+  let vel = direction.clone().normalize().multiplyScalar(stepSize * 150); // より速く
+  
+  const rsVisual = bhMesh.scale.x;
+  const Gvis = 4.0 * rsVisual;
+  const soft = rsVisual * rsVisual * 0.4 + 0.04;
+  
+  let absorbed = false;
+  
+  for (let i = 0; i < steps; i++) {
+    points.push(pos.x, pos.y, pos.z);
+    
+    // ブラックホールからの距離
+    const r2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z;
+    const r = Math.sqrt(r2) + 1e-6;
+    
+    // 事象の地平線に到達したら、そこから先は吸い込まれる
+    if (r < rsVisual * 1.05) {
+      // ブラックホールの中心に向かって吸い込まれる様子を表現
+      const toCenter = new THREE.Vector3(-pos.x, -pos.y, -pos.z).normalize();
+      const fallSpeed = (rsVisual * 1.05 - r) * 5.0; // 落下速度を加速
+      
+      // さらに数点追加してブラックホールに落ちていく様子を描画
+      for (let fall = 0; fall < 10; fall++) {
+        pos.add(toCenter.clone().multiplyScalar(fallSpeed * 0.1));
+        const rAfter = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+        if (rAfter < rsVisual * 0.3) {
+          // 完全に吸い込まれた
+          absorbed = true;
+          break;
+        }
+        points.push(pos.x, pos.y, pos.z);
+      }
+      absorbed = true;
+      break;
+    }
+    
+    // 重力による曲がり（光の経路の曲がり）
+    // ブラックホールに近づくほど強く曲がる
+    const accMag = -Gvis / (r2 + soft);
+    const invR = 1.0 / r;
+    const ax = accMag * pos.x * invR;
+    const ay = accMag * pos.y * invR;
+    const az = accMag * pos.z * invR;
+    
+    // 速度の方向を更新（重力の影響）
+    // ブラックホールに近いほど強く引き寄せられる
+    const pullStrength = 1.0 + (rsVisual / r) * 2.0; // 距離に応じて強度を増加
+    vel.x += ax * stepSize * 0.15 * pullStrength;
+    vel.y += ay * stepSize * 0.15 * pullStrength;
+    vel.z += az * stepSize * 0.15 * pullStrength;
+    
+    // 速度を正規化（光速を保つ）
+    vel.normalize().multiplyScalar(stepSize * 150);
+    
+    // 位置を更新
+    pos.add(vel.clone().multiplyScalar(stepSize));
+    
+    // 遠くに離れたら停止（ブラックホールから離れていく場合）
+    if (r > 200 && vel.dot(new THREE.Vector3(pos.x, pos.y, pos.z).normalize()) > 0) {
+      break;
+    }
+  }
+  
+  const beamGroup = new THREE.Group();
+  
+  // 距離に応じた色と太さの計算（ブラックホールに近づくほど赤く、細く）
+  const colors = [];
+  const widths = [];
+  
+  for (let i = 0; i < points.length / 3; i++) {
+    const px = points[i * 3];
+    const py = points[i * 3 + 1];
+    const pz = points[i * 3 + 2];
+    const r = Math.sqrt(px * px + py * py + pz * pz);
+    
+    // ブラックホールに近づくほど赤く変化（ドップラー効果的な表現）
+    const distFactor = Math.min(1.0, r / (rsVisual * 10));
+    const redIntensity = 1.0 - distFactor; // 近いほど赤い
+    const color = new THREE.Color().lerpColors(
+      new THREE.Color(0x00ffff), // シアン（遠い）
+      new THREE.Color(0xff4400), // オレンジ/赤（近い）
+      redIntensity
+    );
+    colors.push(color.r, color.g, color.b);
+    
+    // ブラックホールに近づくほど細くなる（速度が上がる表現）
+    const width = 0.3 + distFactor * 0.7; // 近いほど細い
+    widths.push(width);
+  }
+  
+  // 超太いコアビーム（5本重ねてより派手に）
+  for (let core = 0; core < 5; core++) {
+    const coreGeometry = new THREE.BufferGeometry();
+    coreGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    
+    // 距離に応じた色を適用
+    const coreColors = [];
+    for (let i = 0; i < colors.length; i += 3) {
+      const factor = core === 0 ? 1.0 : (0.7 - core * 0.15);
+      coreColors.push(colors[i] * factor, colors[i + 1] * factor, colors[i + 2] * factor);
+    }
+    coreGeometry.setAttribute('color', new THREE.Float32BufferAttribute(coreColors, 3));
+    
+    const coreMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: core === 0 ? 1.0 : (0.7 - core * 0.15),
+      linewidth: core === 0 ? 8 : (6 - core * 1)
+    });
+    const coreLine = new THREE.Line(coreGeometry, coreMaterial);
+    beamGroup.add(coreLine);
+  }
+  
+  // 外側のグローライン（10本でより派手に）
+  for (let i = 0; i < 10; i++) {
+    const glowGeometry = new THREE.BufferGeometry();
+    glowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    
+    // 距離に応じた色を適用（グローはより控えめに）
+    const glowColors = [];
+    const hue = (i / 10) * 0.3;
+    const baseColor = new THREE.Color().setHSL(0.5 + hue, 1.0, 0.5 + i * 0.05);
+    for (let j = 0; j < colors.length; j += 3) {
+      const distColor = new THREE.Color(colors[j], colors[j + 1], colors[j + 2]);
+      const blended = baseColor.clone().lerp(distColor, 0.5).multiplyScalar(0.6 - i * 0.05);
+      glowColors.push(blended.r, blended.g, blended.b);
+    }
+    glowGeometry.setAttribute('color', new THREE.Float32BufferAttribute(glowColors, 3));
+    
+    const glowMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.6 - i * 0.05,
+      linewidth: 2
+    });
+    const glowLine = new THREE.Line(glowGeometry, glowMaterial);
+    beamGroup.add(glowLine);
+  }
+  
+  // 発射点の超派手なエフェクト（複数のリング）
+  for (let ring = 0; ring < 5; ring++) {
+    const emitterGeo = new THREE.RingGeometry(ring * 0.3, ring * 0.3 + 0.4, 64);
+    const emitterMat = new THREE.MeshBasicMaterial({
+      color: ring === 0 ? 0x00ffff : (ring === 1 ? 0x88ffff : (ring === 2 ? 0x00aaff : (ring === 3 ? 0xffffff : 0x00ffff))),
+      transparent: true,
+      opacity: 0.9 - ring * 0.15,
+      side: THREE.DoubleSide
+    });
+    const emitter = new THREE.Mesh(emitterGeo, emitterMat);
+    emitter.position.copy(startPos);
+    emitter.lookAt(startPos.clone().add(direction));
+    emitter.userData.startTime = performance.now();
+    emitter.userData.ringIndex = ring;
+    beamGroup.add(emitter);
+  }
+  
+  // 発射点のパーティクル風エフェクト（複数の点）
+  for (let p = 0; p < 20; p++) {
+    const particleGeo = new THREE.SphereGeometry(0.1, 8, 8);
+    const particleMat = new THREE.MeshBasicMaterial({
+      color: Math.random() > 0.5 ? 0x00ffff : 0x88ffff,
+      transparent: true,
+      opacity: 1.0
+    });
+    const particle = new THREE.Mesh(particleGeo, particleMat);
+    const angle = (p / 20) * Math.PI * 2;
+    const radius = 0.5 + Math.random() * 0.5;
+    particle.position.copy(startPos);
+    particle.position.add(new THREE.Vector3(
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
+      0
+    ).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), direction)));
+    particle.userData.velocity = direction.clone().multiplyScalar(0.5 + Math.random() * 0.5);
+    particle.userData.startTime = performance.now();
+    beamGroup.add(particle);
+  }
+  
+  scene.add(beamGroup);
+  
+  return beamGroup;
+}
+
+photonShotBtn.addEventListener('click', firePhotonShot);
+
 // ---------- Animate with lens postprocess ----------
 let last = performance.now();
 function updateLensUniforms(){
@@ -1066,6 +1295,57 @@ function tick(now){
   last = now;
 
   diskMat.uniforms.uTime.value = now*0.001;
+  
+  // フォトンビームのアニメーションとフェードアウト
+  if (currentPhotonBeam) {
+    photonBeamAge += dt;
+    const fade = 1.0 - (photonBeamAge / PHOTON_BEAM_LIFETIME);
+    const time = now * 0.001;
+    
+    // ビームの各要素をアニメーション
+    currentPhotonBeam.children.forEach((child, index) => {
+      // リングエフェクトの拡大アニメーション
+      if (child.userData && child.userData.ringIndex !== undefined) {
+        const ringAge = (now - child.userData.startTime) * 0.001;
+        const scale = 1.0 + ringAge * 2.0;
+        child.scale.set(scale, scale, 1);
+        if (child.material) {
+          child.material.opacity = Math.max(0, (0.9 - child.userData.ringIndex * 0.15) * fade * (1.0 - ringAge * 0.5));
+        }
+      }
+      
+      // パーティクルエフェクトの移動とフェード
+      if (child.userData && child.userData.velocity) {
+        if (!child.userData.initialPos) {
+          child.userData.initialPos = child.position.clone();
+        }
+        const particleAge = (now - child.userData.startTime) * 0.001;
+        const velocity = child.userData.velocity.clone().multiplyScalar(particleAge);
+        child.position.copy(child.userData.initialPos).add(velocity);
+        if (child.material) {
+          child.material.opacity = Math.max(0, fade * (1.0 - particleAge * 2.0));
+          child.scale.setScalar(1.0 + particleAge * 3.0);
+        }
+      }
+      
+      // ラインのフェードアウトとパルス
+      if (child.material && child.material.opacity !== undefined && !child.userData.ringIndex && !child.userData.velocity) {
+        const pulse = 1.0 + Math.sin(time * 15.0 + index) * 0.2;
+        child.material.opacity = Math.max(0, fade * pulse * (index < 5 ? 1.0 : (0.6 - (index - 5) * 0.05)));
+      }
+    });
+    
+    // 寿命が来たら削除
+    if (photonBeamAge >= PHOTON_BEAM_LIFETIME) {
+      scene.remove(currentPhotonBeam);
+      currentPhotonBeam.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material && child.material.dispose) child.material.dispose();
+      });
+      currentPhotonBeam = null;
+      photonBeamAge = 0;
+    }
+  }
 
   // パーティクル数の変更を処理
   const desired = parseInt(maxParticles.value);

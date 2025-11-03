@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>技術仕様 - Hawking Radiation Simulator Pro</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #0a0e1a 0%, #1a1f2e 100%);
+      color: #e7eaef;
+      line-height: 1.6;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      padding: 40px 20px;
+      background: rgba(10, 12, 18, 0.6);
+      border-radius: 20px;
+      margin-bottom: 40px;
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #00d4ff, #0099ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle {
+      font-size: 1.2em;
+      opacity: 0.8;
+      margin-bottom: 20px;
+    }
+    .back-btn {
+      display: inline-block;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #00d4ff, #0099ff);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+    }
+    .back-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
+    }
+    .section {
+      background: rgba(10, 12, 18, 0.6);
+      border-radius: 16px;
+      padding: 30px;
+      margin-bottom: 30px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .section h2 {
+      font-size: 1.8em;
+      margin-bottom: 20px;
+      color: #00d4ff;
+      border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+      padding-bottom: 10px;
+    }
+    .section h3 {
+      font-size: 1.3em;
+      margin-top: 25px;
+      margin-bottom: 15px;
+      color: #88ffff;
+    }
+    .formula-box {
+      background: rgba(0, 212, 255, 0.1);
+      border-left: 4px solid #00d4ff;
+      padding: 15px 20px;
+      margin: 15px 0;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 1.1em;
+    }
+    .code-block {
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 15px 0;
+      overflow-x: auto;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .code-block code {
+      color: #88ffff;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    .constant-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .constant-item {
+      background: rgba(0, 212, 255, 0.05);
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 212, 255, 0.2);
+    }
+    .constant-item strong {
+      color: #00d4ff;
+      display: block;
+      margin-bottom: 5px;
+    }
+    .highlight {
+      background: rgba(255, 68, 0, 0.2);
+      border-left: 3px solid #ff4400;
+      padding: 10px 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+    }
+    ul, ol {
+      margin-left: 20px;
+      margin-top: 10px;
+    }
+    li {
+      margin-bottom: 8px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(0, 212, 255, 0.2);
+      border-radius: 12px;
+      font-size: 0.85em;
+      margin-left: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    th {
+      background: rgba(0, 212, 255, 0.1);
+      color: #00d4ff;
+      font-weight: 600;
+    }
+    @media (max-width: 768px) {
+      h1 { font-size: 2em; }
+      .section { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔬 技術仕様</h1>
+      <p class="subtitle">Hawking Radiation Simulator Pro の物理計算詳細</p>
+      <a href="index.html" class="back-btn">← シミュレーターに戻る</a>
+    </header>
+
+    <div class="section">
+      <h2>🔬 数値計算手法</h2>
+      <p>本シミュレーターは、天体物理学で標準的に使用される数値計算手法を組み合わせて実装されています。</p>
+      
+      <h3>現在実装されている手法</h3>
+      <ul>
+        <li><strong>粒子法 (Particle Method)</strong>: パーティクルシステムによるホーキング放射の可視化</li>
+        <li><strong>光線追跡法 (Ray Tracing)</strong>: フォトンショットの軌道計算</li>
+        <li><strong>陽解法 (Explicit Method)</strong>: パーティクルの位置・速度の時間発展</li>
+        <li><strong>ポアソン方程式の簡略化</strong>: 重力場の計算（ソフトニングパラメータを使用）</li>
+      </ul>
+
+      <h3>関連する（将来拡張可能な）手法</h3>
+      <ul>
+        <li><strong>輻射輸送 (Radiative Transfer)</strong>: より正確なホーキング放射のスペクトル計算（Python APIで部分的に実装）</li>
+        <li><strong>Tree法</strong>: 大量パーティクルに対する高速重力計算（現状は直接計算）</li>
+        <li><strong>SPH法</strong>: 流体としての降着円盤のシミュレーション</li>
+      </ul>
+      
+      <div class="highlight">
+        💡 <strong>参考</strong>: 原始星収縮、BH降着円盤、銀河形成などの天体現象では、流体力学・磁気流体力学、ポアソン方程式、輻射輸送などの支配方程式を、格子法、SPH法、Tree法、光線追跡法などの数値計算法で解いています。本シミュレーターも同様のアプローチを採用しています。
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📐 物理定数</h2>
+      <p>シミュレーターで使用されている基本的な物理定数です。</p>
+      <div class="constant-grid">
+        <div class="constant-item">
+          <strong>G (重力定数)</strong>
+          <span>6.67430 × 10⁻¹¹ m³/kg/s²</span>
+        </div>
+        <div class="constant-item">
+          <strong>c (光速)</strong>
+          <span>299,792,458 m/s</span>
+        </div>
+        <div class="constant-item">
+          <strong>ℏ (換算プランク定数)</strong>
+          <span>1.054571817 × 10⁻³⁴ J·s</span>
+        </div>
+        <div class="constant-item">
+          <strong>k_B (ボルツマン定数)</strong>
+          <span>1.380649 × 10⁻²³ J/K</span>
+        </div>
+        <div class="constant-item">
+          <strong>M_☉ (太陽質量)</strong>
+          <span>1.98847 × 10³⁰ kg</span>
+        </div>
+        <div class="constant-item">
+          <strong>h (プランク定数)</strong>
+          <span>6.62607015 × 10⁻³⁴ J·s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>⚫ ブラックホールの物理量</h2>
+      
+      <h3>シュヴァルツシルト半径</h3>
+      <p>ブラックホールの事象の地平線の半径を計算します。</p>
+      <div class="formula-box">
+        r_s = 2GM / c²
+      </div>
+      <ul>
+        <li><strong>M</strong>: ブラックホールの質量（kg）</li>
+        <li><strong>r_s</strong>: シュヴァルツシルト半径（m）</li>
+      </ul>
+      <div class="code-block">
+        <code>schwarzschildRadius(Mkg) = 2 * G * Mkg / (c * c)</code>
+      </div>
+
+      <h3>ホーキング温度</h3>
+      <p>ブラックホールが放射する温度を計算します。質量が小さいほど高温になります。</p>
+      <div class="formula-box">
+        T_H = (ℏc³) / (8πGMk_B)
+      </div>
+      <ul>
+        <li><strong>T_H</strong>: ホーキング温度（K）</li>
+        <li>質量が小さいほど温度が高くなり、より多くの放射を放出します</li>
+      </ul>
+      <div class="code-block">
+        <code>hawkingTemperature(Mkg) = (hbar * c³) / (8π * G * Mkg * kB)</code>
+      </div>
+
+      <h3>相対的な放射パワー</h3>
+      <p>太陽質量に対する相対的なホーキング放射パワーです。</p>
+      <div class="formula-box">
+        P_rel = (M_☉ / M)²
+      </div>
+      <div class="highlight">
+        💡 <strong>重要なポイント</strong>: 質量が小さいほど放射パワーが大きくなります（逆二乗則）。小さなブラックホールほど速く蒸発します。
+      </div>
+
+      <h3>Stefan-Boltzmann則による絶対パワー</h3>
+      <p>Python APIで実装されている、より正確な計算です。</p>
+      <div class="formula-box">
+        P = σ × A × T_H⁴<br>
+        A = 4πr_s²
+      </div>
+      <ul>
+        <li><strong>σ</strong>: Stefan-Boltzmann定数 (5.670374419 × 10⁻⁸ W/m²/K⁴)</li>
+        <li><strong>A</strong>: ブラックホールの表面積</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>🌌 パーティクル物理</h2>
+      
+      <h3>重力加速度の計算</h3>
+      <p>ブラックホール周辺のパーティクルに働く重力を計算します。</p>
+      <div class="formula-box">
+        a = -G_vis / (r² + ε)
+      </div>
+      <ul>
+        <li><strong>G_vis</strong>: 視覚的な重力定数 (4.0 × r_s)</li>
+        <li><strong>r</strong>: ブラックホールからの距離</li>
+        <li><strong>ε</strong>: ソフトニングパラメータ（特異点回避）</li>
+      </ul>
+      <div class="code-block">
+        <code>
+const accMag = -Gvis / (r2 + soft);<br>
+const ax = accMag * x / r;<br>
+const ay = accMag * y / r;<br>
+const az = accMag * z / r;
+        </code>
+      </div>
+
+      <h3>粒子種別と減衰</h3>
+      <p>各粒子種別に応じた速度の減衰係数です。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>粒子種別</th>
+            <th>記号</th>
+            <th>減衰係数</th>
+            <th>説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>フォトン</td>
+            <td>γ</td>
+            <td>0.998</td>
+            <td>最も減衰しやすい（光として観測可能）</td>
+          </tr>
+          <tr>
+            <td>ニュートリノ</td>
+            <td>ν</td>
+            <td>0.9995</td>
+            <td>中程度の減衰（検出が困難）</td>
+          </tr>
+          <tr>
+            <td>グラビトン</td>
+            <td>g</td>
+            <td>0.999</td>
+            <td>最も減衰しにくい（未検出）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>パーティクル生成率</h3>
+      <div class="formula-box">
+        rate = baseRate × pairRateUI × max(0.01, P_rel)
+      </div>
+      <ul>
+        <li><strong>baseRate</strong>: 500.0 ペア/秒</li>
+        <li><strong>pairRateUI</strong>: UI上のペア生成率（0.0-1.0）</li>
+        <li><strong>P_rel</strong>: 相対的な放射パワー</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>⚡ フォトンショット（光の軌道）</h2>
+      
+      <h3>重力レンズ効果</h3>
+      <p>光がブラックホールの重力によって曲がる様子を計算します。</p>
+      <div class="formula-box">
+        a = -G_vis / (r² + ε)<br>
+        pullStrength = 1 + 2r_s / r
+      </div>
+      <div class="highlight">
+        💡 <strong>アインシュタインの一般相対性理論</strong>: 光は質量がありませんが、時空の歪みによって曲がります。これが重力レンズ効果です。
+      </div>
+
+      <h3>ブラックホールへの落下</h3>
+      <p>事象の地平線を超えた光は、ブラックホールの中心に向かって吸い込まれます。</p>
+      <ul>
+        <li>事象の地平線: <code>r < 1.05 × r_s</code></li>
+        <li>落下速度は距離に応じて加速</li>
+        <li>完全に吸い込まれる: <code>r < 0.3 × r_s</code></li>
+      </ul>
+
+      <h3>ドップラー効果的な色の変化</h3>
+      <p>ブラックホールに近づくほど、光は赤く（またはオレンジに）変化します。</p>
+      <div class="formula-box">
+        色 = lerp(シアン, オレンジ, 1 - r/(10×r_s))
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🔬 Python APIの高度な計算</h2>
+      <p>Python APIでは、JavaScriptでは困難な計算を実装しています。計算資源の範囲内で実装可能な手法を採用しています。</p>
+      
+      <h3>N体問題のソルバー（Tree法の簡略版）</h3>
+      <p>大量パーティクルに対する高速重力計算を実装しています。</p>
+      <ul>
+        <li>ブラックホールからの重力を主要項として計算</li>
+        <li>パーティクル間の相互作用は近傍のみ考慮（Tree法の簡略版）</li>
+        <li>計算量: O(N²) → O(N log N)（完全なTree法では）の簡略版</li>
+      </ul>
+      
+      <h3>SPH法（Smoothed Particle Hydrodynamics）</h3>
+      <p>流体としての降着円盤のシミュレーションを実装しています。</p>
+      <ul>
+        <li>Cubic Splineカーネル関数を使用</li>
+        <li>各パーティクルの密度を近傍パーティクルから計算</li>
+        <li>用途: 降着円盤の流体シミュレーション（将来拡張用）</li>
+      </ul>
+      
+      <h3>輻射輸送（FLD法）</h3>
+      <p>Flux-Limited Diffusion (FLD) 近似による輻射フラックス計算を実装しています。</p>
+      <ul>
+        <li>光学的に薄い場合: Stefan-Boltzmann則</li>
+        <li>光学的に厚い場合: 拡散近似</li>
+        <li>用途: より正確なホーキング放射のスペクトル計算</li>
+      </ul>
+      
+      <h3>より正確なフォトン軌道計算（一般相対論的）</h3>
+      <p>一般相対論的効果を考慮したフォトン軌道計算を実装しています。</p>
+      <ul>
+        <li>シュヴァルツシルト解での測地線方程式（簡略版）</li>
+        <li>メトリックテンソルから計算（簡略化）</li>
+        <li>強い重力場での補正を考慮</li>
+        <li>用途: より正確な重力レンズ効果の計算</li>
+      </ul>
+      
+      <h3>軌道積分器（RK法）</h3>
+      <p>より正確な時間発展のための積分器を実装しています。</p>
+      <ul>
+        <li>オイラー法: 1次精度</li>
+        <li>2次ルンゲ・クッタ法: 2次精度</li>
+        <li>4次ルンゲ・クッタ法: 4次精度（簡略版）</li>
+        <li>用途: より正確なパーティクルの軌道計算</li>
+      </ul>
+      
+      <h3>Planck分布によるスペクトル計算</h3>
+      <p>より正確な黒体放射スペクトルを計算します。</p>
+      <div class="formula-box">
+        B_ν(T) = (2hν³/c²) / (exp(hν/kT) - 1)
+      </div>
+      <div class="code-block">
+        <code>
+def planck_spectrum(frequency_hz, temperature_K):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;exponent = (h * nu) / (kB * T)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;numerator = 2 * h * (nu³) / (c²)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;denominator = exp(exponent) - 1<br>
+&nbsp;&nbsp;&nbsp;&nbsp;return numerator / denominator
+        </code>
+      </div>
+
+      <h3>数値積分による総パワー計算</h3>
+      <p>SciPyを使用して、全周波数にわたるPlanck分布の積分を実行します。</p>
+      <div class="highlight">
+        🔬 <strong>高度な計算</strong>: フロントエンドでは不可能な複雑な数値積分をPythonで実行できます。
+      </div>
+
+      <h3>一般相対論的補正</h3>
+      <p>ニュートン重力に相対論的補正を加えた重力加速度です。</p>
+      <div class="formula-box">
+        a_newton = -GM / r²<br>
+        a_relativistic = a_newton × (1 + 3r_s / r)
+      </div>
+      <p>ブラックホールに近づくほど、ニュートン重力との差が大きくなります。</p>
+    </div>
+
+    <div class="section">
+      <h2>🎨 視覚化のための簡略化</h2>
+      <p>実際の物理計算では、以下の簡略化を行っています：</p>
+      <ul>
+        <li><strong>ソフトニングパラメータ</strong>: <code>ε = r_s² × 0.4 + 0.04</code>（重力計算の特異点回避）</li>
+        <li><strong>視覚的な重力定数</strong>: <code>G_vis = 4.0 × r_s</code>（実際のGとは異なるスケール）</li>
+        <li><strong>減衰係数</strong>: 粒子種別に応じた経験的な減衰（0.998-0.999）</li>
+        <li><strong>光速の近似</strong>: フォトンショットでは <code>v ≈ 150 × stepSize</code> として扱う</li>
+      </ul>
+      <div class="highlight">
+        ⚠️ <strong>注意</strong>: これらの簡略化は教育・可視化目的のためです。実際の物理計算ではより正確な手法が必要です。
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📚 参考文献</h2>
+      <ul>
+        <li>Hawking, S. W. (1974). "Black hole explosions?". Nature 248 (5443): 30–31.</li>
+        <li>Schwarzschild, K. (1916). "Über das Gravitationsfeld eines Massenpunktes nach der Einsteinschen Theorie". Sitzungsberichte der Königlich Preussischen Akademie der Wissenschaften. 7: 189–196.</li>
+      </ul>
+    </div>
+
+    <footer style="text-align: center; padding: 40px 20px; opacity: 0.7;">
+      <p>Hawking Radiation Simulator Pro - 技術仕様</p>
+      <p style="margin-top: 10px;">
+        <a href="index.html" class="back-btn" style="font-size: 0.9em; padding: 8px 16px;">← シミュレーターに戻る</a>
+      </p>
+    </footer>
+  </div>
+</body>
+</html>
+

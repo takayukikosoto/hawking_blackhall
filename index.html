@@ -61,11 +61,16 @@
       </div>
       <div class="card">
         <h3>Controls</h3>
-        <div class="row">
-          <button id="resetBtn">Reset</button>
-          <button id="pauseBtn">Pause</button>
-          <button id="screenshotBtn">Screenshot</button>
-        </div>
+                <div class="row">
+                  <button id="resetBtn">Reset</button>
+                  <button id="pauseBtn">Pause</button>
+                  <button id="screenshotBtn">Screenshot</button>
+                </div>
+                <div class="row">
+                  <a href="tech-specs.html" target="_blank" style="text-decoration: none;">
+                    <button id="techSpecsBtn" style="width: 100%;">技術仕様を見る</button>
+                  </a>
+                </div>
                 <label>View Mode</label>
                 <select id="viewMode">
                   <option value="3d">3D View</option>
@@ -91,7 +96,12 @@
         </p>
       </div>
     </div>
+      </div>
     </div>
-  </div>
-</body>
+    <!-- フォトンショットボタン（メニュー外） -->
+    <button id="photonShotBtn" class="photon-shot-btn" title="フォトンショット発射">
+      <span class="shot-icon">⚡</span>
+      <span class="shot-label">フォトンショット</span>
+    </button>
+  </body>
 </html>

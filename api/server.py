@@ -7,10 +7,25 @@ Provides REST API endpoints for physics calculations and simulation data
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import math
 import numpy as np
 from scipy import integrate
+
+# 高度な物理計算モジュールをインポート
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from physics_advanced import (
+        NBodySolver, SPHSimulator, RadiativeTransfer,
+        OrbitalIntegrator, calculate_photon_trajectory_relativistic,
+        Particle
+    )
+    ADVANCED_PHYSICS_AVAILABLE = True
+except ImportError as e:
+    ADVANCED_PHYSICS_AVAILABLE = False
+    print(f"Warning: Advanced physics module not available: {e}")
 
 app = FastAPI(
     title="Hawking Radiation Simulator API",
@@ -52,6 +67,17 @@ class EnergyDistributionRequest(BaseModel):
 class GravityRequest(BaseModel):
     mass_solar: float = Field(gt=0, description="太陽質量単位", example=10.0)
     distance_m: float = Field(gt=0, description="ブラックホールからの距離（メートル）", example=1e6)
+
+class PhotonTrajectoryRequest(BaseModel):
+    mass_solar: float = Field(gt=0, description="太陽質量単位", example=10.0)
+    start_pos: List[float] = Field(description="開始位置 [x, y, z] (m)", example=[1000.0, 0.0, 0.0])
+    direction: List[float] = Field(description="初期方向 [dx, dy, dz] (正規化)", example=[-1.0, 0.0, 0.0])
+    steps: int = Field(ge=10, le=10000, default=500, description="ステップ数")
+    step_size: float = Field(gt=0, default=0.1, description="ステップサイズ")
+
+class NBodyRequest(BaseModel):
+    mass_solar: float = Field(gt=0, description="太陽質量単位", example=10.0)
+    particles: List[dict] = Field(description="パーティクルのリスト [{'x': float, 'y': float, 'z': float, 'vx': float, 'vy': float, 'vz': float, 'mass': float}]")
 
 # 計算関数
 def schwarzschild_radius(M_kg: float) -> float:
@@ -302,19 +328,137 @@ async def calculate_gravity(request: GravityRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/physics/photon-trajectory-relativistic")
+async def calculate_photon_trajectory_relativistic(request: PhotonTrajectoryRequest):
+    """
+    より正確な一般相対論的フォトン軌道計算
+    
+    - **mass_solar**: 太陽質量単位でのブラックホールの質量
+    - **start_pos**: 開始位置 [x, y, z] (m)
+    - **direction**: 初期方向 [dx, dy, dz] (正規化)
+    - **steps**: ステップ数
+    - **step_size**: ステップサイズ
+    """
+    if not ADVANCED_PHYSICS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Advanced physics module not available")
+    
+    try:
+        M_kg = request.mass_solar * M_sun
+        
+        trajectory = calculate_photon_trajectory_relativistic(
+            tuple(request.start_pos),
+            tuple(request.direction),
+            M_kg,
+            request.steps,
+            request.step_size
+        )
+        
+        return {
+            "trajectory": trajectory,
+            "num_points": len(trajectory),
+            "mass_solar": request.mass_solar
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/physics/nbody-gravity")
+async def calculate_nbody_gravity(request: NBodyRequest):
+    """
+    N体問題の重力計算（Tree法の簡略版）
+    
+    - **mass_solar**: 太陽質量単位でのブラックホールの質量
+    - **particles**: パーティクルのリスト
+    """
+    if not ADVANCED_PHYSICS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Advanced physics module not available")
+    
+    try:
+        M_kg = request.mass_solar * M_sun
+        
+        # パーティクルオブジェクトに変換
+        particles = []
+        for p_data in request.particles:
+            p = Particle(
+                x=p_data.get('x', 0.0),
+                y=p_data.get('y', 0.0),
+                z=p_data.get('z', 0.0),
+                vx=p_data.get('vx', 0.0),
+                vy=p_data.get('vy', 0.0),
+                vz=p_data.get('vz', 0.0),
+                mass=p_data.get('mass', 0.0),
+                species=p_data.get('species', 0)
+            )
+            particles.append(p)
+        
+        solver = NBodySolver(theta=0.5)
+        accelerations = solver.calculate_gravity_tree(particles, M_kg)
+        
+        return {
+            "accelerations": accelerations,
+            "num_particles": len(particles)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/physics/sph-density")
+async def calculate_sph_density(particles_data: List[dict]):
+    """
+    SPH法による密度計算
+    
+    - **particles**: パーティクルのリスト（mass必須）
+    """
+    if not ADVANCED_PHYSICS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Advanced physics module not available")
+    
+    try:
+        particles = []
+        for p_data in particles_data:
+            p = Particle(
+                x=p_data.get('x', 0.0),
+                y=p_data.get('y', 0.0),
+                z=p_data.get('z', 0.0),
+                vx=p_data.get('vx', 0.0),
+                vy=p_data.get('vy', 0.0),
+                vz=p_data.get('vz', 0.0),
+                mass=p_data.get('mass', 1.0)  # デフォルト質量
+            )
+            particles.append(p)
+        
+        sph = SPHSimulator(smoothing_length=1.0)
+        densities = sph.calculate_density(particles)
+        pressures = sph.calculate_pressure(densities)
+        
+        return {
+            "densities": densities,
+            "pressures": pressures,
+            "num_particles": len(particles)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/")
 async def root():
     """ルートエンドポイント"""
+    features = [
+        "Hawking radiation calculations",
+        "Blackbody spectrum (Planck distribution)",
+        "Relativistic gravity corrections",
+        "Energy distribution sampling"
+    ]
+    
+    if ADVANCED_PHYSICS_AVAILABLE:
+        features.extend([
+            "Advanced photon trajectory (relativistic)",
+            "N-body gravity solver (Tree method)",
+            "SPH fluid simulation"
+        ])
+    
     return {
         "message": "Hawking Radiation Simulator Pro API",
         "docs": "/docs",
         "version": "1.0.0",
-        "features": [
-            "Hawking radiation calculations",
-            "Blackbody spectrum (Planck distribution)",
-            "Relativistic gravity corrections",
-            "Energy distribution sampling"
-        ]
+        "features": features,
+        "advanced_physics": ADVANCED_PHYSICS_AVAILABLE
     }
 
 if __name__ == '__main__':
