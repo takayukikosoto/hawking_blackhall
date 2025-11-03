@@ -3,8 +3,10 @@ import {G,c,hbar,kB,h,M_sun,schwarzschildRadius,hawkingTemperature,relativePower
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// API設定
-const API_BASE_URL = 'http://localhost:8001';
+// API設定（デプロイ環境に応じて自動切り替え）
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8001'
+  : 'https://hawking-sim-api.onrender.com'; // Render にデプロイ時のURL（要変更）
 let useAPI = true; // APIを使用するかどうか（フォールバック用）
 
 // API結果のキャッシュ（パフォーマンス最適化）
