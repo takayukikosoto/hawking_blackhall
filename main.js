@@ -47,6 +47,9 @@ const resetBtn = document.getElementById('resetBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const screenshotBtn = document.getElementById('screenshotBtn');
 const photonShotBtn = document.getElementById('photonShotBtn');
+const evaporateBtn = document.getElementById('evaporateBtn');
+const stopEvaporateBtn = document.getElementById('stopEvaporateBtn');
+const instantEvaporateBtn = document.getElementById('instantEvaporateBtn');
 const toggleUI = document.getElementById('toggleUI');
 const cameraUp = document.getElementById('cameraUp');
 const cameraDown = document.getElementById('cameraDown');
@@ -74,6 +77,13 @@ let paused = false;
 let uiCollapsed = false;
 let isCrossSectionMode = false;
 let currentSectionPlane = 'xy';
+
+// 蒸発機能用の変数
+let isEvaporating = false;
+let isInstantEvaporating = false; // 一気蒸発中フラグ
+let evaporationRate = 0.01; // 100倍の速度（通常の100倍で蒸発）
+let lastEvaporationTime = 0;
+let cameraShakeIntensity = 0;
 
 // UI折り畳み機能
 toggleUI.addEventListener('click', ()=>{
@@ -1721,6 +1731,362 @@ function createPhotonBeam(startPos, direction, beamIndex = 0) {
 
 photonShotBtn.addEventListener('click', firePhotonShot);
 
+// ---------- ブラックホール蒸発機能 ----------
+function startEvaporation() {
+  if (isEvaporating) return;
+  
+  isEvaporating = true;
+  lastEvaporationTime = performance.now();
+  
+  // UI更新
+  evaporateBtn.style.display = 'none';
+  stopEvaporateBtn.style.display = 'flex';
+  evaporateBtn.classList.add('evaporating');
+  
+  // 蒸発ループを開始
+  evaporationLoop();
+}
+
+function stopEvaporation() {
+  if (!isEvaporating) return;
+  
+  isEvaporating = false;
+  cameraShakeIntensity = 0;
+  
+  // UI更新
+  evaporateBtn.style.display = 'flex';
+  stopEvaporateBtn.style.display = 'none';
+  evaporateBtn.classList.remove('evaporating');
+  
+  // 質量がほぼ0になったら爆発エフェクト
+  if (BH_Mass_solar <= 0.001) {
+    createExplosionEffect();
+    bhMesh.visible = false;
+    horizonHalo.visible = false;
+    alert('ブラックホールが完全に蒸発しました！');
+  }
+}
+
+function evaporationLoop() {
+  if (!isEvaporating) return;
+  
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastEvaporationTime) * 0.001);
+  lastEvaporationTime = now;
+  
+  // 質量を減少（100倍速度）
+  BH_Mass_solar -= evaporationRate * dt;
+  
+  // 質量が0以下にならないように
+  if (BH_Mass_solar <= 0.001) {
+    stopEvaporation();
+    return;
+  }
+  
+  // 質量をkg単位に更新
+  BH_Mass_kg = BH_Mass_solar * M_sun;
+  
+  // UI更新
+  massSlider.value = BH_Mass_solar;
+  massNumber.value = BH_Mass_solar;
+  
+  // 物理量の更新
+  updateBHScale().catch(err => console.warn('updateBHScale error:', err));
+  updateMetrics().catch(err => console.warn('updateMetrics error:', err));
+  
+  // 視覚効果: 追加パーティクル生成
+  spawnAdditionalParticles();
+  
+  // カメラシェイク
+  const massRatio = BH_Mass_solar / 10.0; // 初期質量10に対する比率
+  cameraShakeIntensity = Math.max(0, 0.3 * (1.0 - massRatio));
+  
+  requestAnimationFrame(evaporationLoop);
+}
+
+function spawnAdditionalParticles() {
+  // 蒸発中は通常より多くのパーティクルを生成
+  const tempK = hawkingTemperature(BH_Mass_kg);
+  const additionalCount = 5; // 一度に生成する追加パーティクル数
+  
+  let spawned = 0;
+  let idx1 = -1, idx2 = -1;
+  
+  for (let i = 0; i < MAX_PARTICLES && spawned < additionalCount; i++) {
+    if (ages[i] >= lifetimes[i]) {
+      if (idx1 === -1) {
+        idx1 = i;
+      } else {
+        idx2 = i;
+        spawnParticlePair(idx1, idx2, tempK);
+        spawned++;
+        idx1 = -1;
+        idx2 = -1;
+      }
+    }
+  }
+  
+  if (spawned > 0) {
+    needsBufferUpdate = true;
+  }
+}
+
+function createExplosionEffect() {
+  // 大量の高エネルギーパーティクルを生成
+  const tempK = 1e10; // 非常に高温
+  const explosionParticles = 500;
+  
+  let spawned = 0;
+  let idx1 = -1, idx2 = -1;
+  
+  for (let i = 0; i < MAX_PARTICLES && spawned < explosionParticles; i++) {
+    if (ages[i] >= lifetimes[i]) {
+      if (idx1 === -1) {
+        idx1 = i;
+      } else {
+        idx2 = i;
+        
+        // 爆発パーティクルを生成（通常のspawnParticlePairを使用）
+        spawnParticlePair(idx1, idx2, tempK);
+        
+        // 爆発用に速度を大幅に増加
+        const i1_3 = idx1 * 3;
+        const i2_3 = idx2 * 3;
+        const explosionSpeed = 15.0; // 通常よりはるかに速い
+        
+        // ランダムな方向に高速で飛ばす
+        const dir1 = new THREE.Vector3(
+          Math.random() - 0.5,
+          Math.random() - 0.5,
+          Math.random() - 0.5
+        ).normalize();
+        const dir2 = new THREE.Vector3(
+          Math.random() - 0.5,
+          Math.random() - 0.5,
+          Math.random() - 0.5
+        ).normalize();
+        
+        velocities[i1_3 + 0] = dir1.x * explosionSpeed;
+        velocities[i1_3 + 1] = dir1.y * explosionSpeed;
+        velocities[i1_3 + 2] = dir1.z * explosionSpeed;
+        
+        velocities[i2_3 + 0] = dir2.x * explosionSpeed;
+        velocities[i2_3 + 1] = dir2.y * explosionSpeed;
+        velocities[i2_3 + 2] = dir2.z * explosionSpeed;
+        
+        // 寿命を長くする
+        lifetimes[idx1] = 10.0;
+        lifetimes[idx2] = 10.0;
+        
+        spawned++;
+        idx1 = -1;
+        idx2 = -1;
+      }
+    }
+  }
+  
+  needsBufferUpdate = true;
+}
+
+// イベントリスナー
+evaporateBtn.addEventListener('click', () => {
+  if (!isEvaporating) {
+    startEvaporation();
+  }
+});
+
+stopEvaporateBtn.addEventListener('click', () => {
+  if (isEvaporating) {
+    stopEvaporation();
+  }
+});
+
+// ---------- 一気蒸発機能 ----------
+function startInstantEvaporation() {
+  if (isInstantEvaporating || isEvaporating) return;
+  
+  isInstantEvaporating = true;
+  instantEvaporateBtn.disabled = true;
+  instantEvaporateBtn.style.opacity = '0.5';
+  
+  // 一気蒸発ループ（非常に高速で質量を減少）
+  instantEvaporationLoop();
+}
+
+function instantEvaporationLoop() {
+  if (!isInstantEvaporating) return;
+  
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - (lastEvaporationTime || now)) * 0.001);
+  lastEvaporationTime = now;
+  
+  // 超高速で質量を減少（500倍速度）
+  const instantRate = evaporationRate * 500; // 通常の500倍
+  BH_Mass_solar -= instantRate * dt;
+  
+  // 質量をkg単位に更新
+  BH_Mass_kg = BH_Mass_solar * M_sun;
+  
+  // UI更新
+  massSlider.value = Math.max(0.001, BH_Mass_solar);
+  massNumber.value = Math.max(0.001, BH_Mass_solar);
+  
+  // 物理量の更新
+  updateBHScale().catch(err => console.warn('updateBHScale error:', err));
+  updateMetrics().catch(err => console.warn('updateMetrics error:', err));
+  
+  // 大量のパーティクルを生成（視覚効果）
+  spawnMassiveParticles();
+  
+  // 激しいカメラシェイク
+  const massRatio = BH_Mass_solar / 10.0;
+  cameraShakeIntensity = Math.max(0, 1.0 * (1.0 - massRatio)); // より強いシェイク
+  
+  // 質量がほぼ0になったら大爆発
+  if (BH_Mass_solar <= 0.001) {
+    finishInstantEvaporation();
+    return;
+  }
+  
+  requestAnimationFrame(instantEvaporationLoop);
+}
+
+function spawnMassiveParticles() {
+  // 一気蒸発中は大量のパーティクルを生成
+  const tempK = hawkingTemperature(BH_Mass_kg);
+  const massiveCount = 20; // 一度に生成する大量のパーティクル
+  
+  let spawned = 0;
+  let idx1 = -1, idx2 = -1;
+  
+  for (let i = 0; i < MAX_PARTICLES && spawned < massiveCount; i++) {
+    if (ages[i] >= lifetimes[i]) {
+      if (idx1 === -1) {
+        idx1 = i;
+      } else {
+        idx2 = i;
+        spawnParticlePair(idx1, idx2, tempK);
+        
+        // 一気蒸発用に速度を大幅に増加
+        const i1_3 = idx1 * 3;
+        const i2_3 = idx2 * 3;
+        const speedMultiplier = 3.0; // 通常より3倍速い
+        
+        velocities[i1_3 + 0] *= speedMultiplier;
+        velocities[i1_3 + 1] *= speedMultiplier;
+        velocities[i1_3 + 2] *= speedMultiplier;
+        velocities[i2_3 + 0] *= speedMultiplier;
+        velocities[i2_3 + 1] *= speedMultiplier;
+        velocities[i2_3 + 2] *= speedMultiplier;
+        
+        spawned++;
+        idx1 = -1;
+        idx2 = -1;
+      }
+    }
+  }
+  
+  if (spawned > 0) {
+    needsBufferUpdate = true;
+  }
+}
+
+function finishInstantEvaporation() {
+  isInstantEvaporating = false;
+  cameraShakeIntensity = 0;
+  
+  // ブラックホールを非表示
+  bhMesh.visible = false;
+  horizonHalo.visible = false;
+  
+  // 超巨大な爆発エフェクト
+  createMassiveExplosion();
+  
+  // ボタンをリセット
+  instantEvaporateBtn.disabled = false;
+  instantEvaporateBtn.style.opacity = '0.9';
+  
+  // 質量を0に設定
+  BH_Mass_solar = 0.001;
+  BH_Mass_kg = BH_Mass_solar * M_sun;
+  massSlider.value = BH_Mass_solar;
+  massNumber.value = BH_Mass_solar;
+  updateBHScale().catch(err => console.warn('updateBHScale error:', err));
+  updateMetrics().catch(err => console.warn('updateMetrics error:', err));
+}
+
+function createMassiveExplosion() {
+  // 超巨大な爆発エフェクト - 全方向にエネルギーを放出
+  const tempK = 1e12; // 極めて高温
+  const explosionParticles = 2000; // 大量のパーティクル
+  
+  let spawned = 0;
+  let idx1 = -1, idx2 = -1;
+  
+  for (let i = 0; i < MAX_PARTICLES && spawned < explosionParticles; i++) {
+    if (ages[i] >= lifetimes[i]) {
+      if (idx1 === -1) {
+        idx1 = i;
+      } else {
+        idx2 = i;
+        
+        // 爆発パーティクルを生成
+        spawnParticlePair(idx1, idx2, tempK);
+        
+        // 爆発用に超高速で全方向に飛ばす
+        const i1_3 = idx1 * 3;
+        const i2_3 = idx2 * 3;
+        const explosionSpeed = 30.0; // 超高速
+        
+        // ランダムな方向に超高速で飛ばす
+        const dir1 = new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize();
+        const dir2 = new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize();
+        
+        velocities[i1_3 + 0] = dir1.x * explosionSpeed;
+        velocities[i1_3 + 1] = dir1.y * explosionSpeed;
+        velocities[i1_3 + 2] = dir1.z * explosionSpeed;
+        
+        velocities[i2_3 + 0] = dir2.x * explosionSpeed;
+        velocities[i2_3 + 1] = dir2.y * explosionSpeed;
+        velocities[i2_3 + 2] = dir2.z * explosionSpeed;
+        
+        // 寿命を長くする（長時間見えるように）
+        lifetimes[idx1] = 15.0;
+        lifetimes[idx2] = 15.0;
+        
+        // 明るい色にする
+        colors[i1_3 + 0] = Math.min(1.0, colors[i1_3 + 0] * 2.0);
+        colors[i1_3 + 1] = Math.min(1.0, colors[i1_3 + 1] * 2.0);
+        colors[i1_3 + 2] = Math.min(1.0, colors[i1_3 + 2] * 2.0);
+        colors[i2_3 + 0] = Math.min(1.0, colors[i2_3 + 0] * 2.0);
+        colors[i2_3 + 1] = Math.min(1.0, colors[i2_3 + 1] * 2.0);
+        colors[i2_3 + 2] = Math.min(1.0, colors[i2_3 + 2] * 2.0);
+        
+        spawned++;
+        idx1 = -1;
+        idx2 = -1;
+      }
+    }
+  }
+  
+  needsBufferUpdate = true;
+}
+
+// 一気蒸発ボタンのイベントリスナー
+instantEvaporateBtn.addEventListener('click', () => {
+  if (!isInstantEvaporating && !isEvaporating) {
+    startInstantEvaporation();
+  }
+});
+
 // ---------- カメラ操作（キーボード + UIボタン） ----------
 const CAMERA_MOVE_SPEED = 2.0;
 const CAMERA_ROTATE_SPEED = 0.05;
@@ -2014,6 +2380,16 @@ function tick(now){
   // 断面モードの更新
   updateCrossSectionView();
 
+  // カメラシェイク（蒸発中）- レンダリング時のみ一時的に適用
+  let cameraShakeOffset = null;
+  if (cameraShakeIntensity > 0 && !isCrossSectionMode) {
+    const shakeX = (Math.random() - 0.5) * cameraShakeIntensity * 0.5;
+    const shakeY = (Math.random() - 0.5) * cameraShakeIntensity * 0.5;
+    const shakeZ = (Math.random() - 0.5) * cameraShakeIntensity * 0.5;
+    cameraShakeOffset = new THREE.Vector3(shakeX, shakeY, shakeZ);
+    camera.position.add(cameraShakeOffset);
+  }
+
   // render to RT then lens
   renderer.setRenderTarget(rt);
   
@@ -2028,6 +2404,11 @@ function tick(now){
     updateLensUniforms();
   }
   renderer.render(postScene, postCam);
+  
+  // カメラシェイクのオフセットを元に戻す
+  if (cameraShakeOffset) {
+    camera.position.sub(cameraShakeOffset);
+  }
 }
 requestAnimationFrame(tick);
 
