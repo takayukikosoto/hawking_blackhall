@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>インフレーションシミュレーター — スカラー場と空間膨張</title>
+  <link rel="stylesheet" href="./inflation.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./inflation.js"></script>
+</head>
+<body>
+  <!-- ナビゲーションバー -->
+  <nav class="main-nav">
+    <div class="nav-container">
+      <a href="index.html" class="nav-item">ホーキング放射</a>
+      <a href="inflation.html" class="nav-item active">インフレーション</a>
+      <a href="supernova.html" class="nav-item">超新星爆発</a>
+    </div>
+  </nav>
+
+  <!-- メイン3Dビュー -->
+  <div id="mainView">
+    <canvas id="c"></canvas>
+    
+    <!-- カメラ操作矢印 -->
+    <div class="camera-controls">
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraUp" title="上に移動">↑</button>
+      </div>
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraLeft" title="左に移動">←</button>
+        <button class="camera-arrow-btn" id="cameraCenter" title="中央にリセット">○</button>
+        <button class="camera-arrow-btn" id="cameraRight" title="右に移動">→</button>
+      </div>
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraDown" title="下に移動">↓</button>
+      </div>
+      <div class="camera-arrow-row camera-zoom-row">
+        <button class="camera-arrow-btn" id="cameraZoomIn" title="ズームイン">+</button>
+        <button class="camera-arrow-btn" id="cameraZoomOut" title="ズームアウト">−</button>
+      </div>
+    </div>
+    
+    <!-- ポテンシャル地形の情報表示 -->
+    <div class="view-info">
+      <div class="info-item">
+        <span class="info-label">スカラー場 φ</span>
+        <span id="phiValue" class="info-value">0.01</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">エネルギー密度 ρ</span>
+        <span id="rhoValue" class="info-value">0.0001</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">膨張率 H</span>
+        <span id="hValue" class="info-value">0.0</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">温度 T</span>
+        <span id="tempValue" class="info-value">0 K</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 空間膨張ビュー -->
+  <div id="expansionView">
+    <canvas id="expansionCanvas"></canvas>
+    <div class="view-label">空間膨張</div>
+  </div>
+
+  <!-- 密度フィールドビュー -->
+  <div id="densityView">
+    <canvas id="densityCanvas"></canvas>
+    <div class="view-label">エネルギー密度フィールド</div>
+  </div>
+
+  <!-- コントロールパネル -->
+  <div id="controlPanel">
+    <div class="panel-header">
+      <h2>🌌 インフレーションシミュレーター</h2>
+      <button id="togglePanel" class="toggle-btn">⚙</button>
+    </div>
+    <div id="panelContent" class="panel-content">
+      <div class="control-section">
+        <h3>スカラー場</h3>
+          <div class="interactive-control">
+            <label>初期値 φ₀</label>
+            <div class="control-visual">
+              <div class="phi-track">
+                <div class="phi-handle" id="phiHandle" style="left: 62.5%;"></div>
+              </div>
+              <input type="number" id="phiInput" value="0.25" step="0.001" min="-1" max="1">
+            </div>
+          </div>
+          <div class="interactive-control">
+            <label>初期速度 ẋ₀</label>
+            <div class="control-visual">
+              <div class="velocity-track">
+                <div class="velocity-handle" id="velocityHandle" style="left: 60%;"></div>
+              </div>
+              <input type="number" id="velocityInput" value="0.02" step="0.001" min="-0.1" max="0.1">
+            </div>
+          </div>
+      </div>
+
+      <div class="control-section">
+        <h3>ポテンシャルパラメータ</h3>
+        <div class="control-group">
+          <label>力の強さ A</label>
+          <div class="param-visual">
+            <input type="range" id="paramA" min="0.5" max="3.0" step="0.1" value="1.2">
+            <span id="paramALabel">1.2</span>
+          </div>
+        </div>
+        <div class="control-group">
+          <label>偽真空位置 B</label>
+          <div class="param-visual">
+            <input type="range" id="paramB" min="0.1" max="0.5" step="0.01" value="0.2">
+            <span id="paramBLabel">0.2</span>
+          </div>
+        </div>
+        <div class="control-group">
+          <label>真空エネルギー C</label>
+          <div class="param-visual">
+            <input type="range" id="paramC" min="0.0" max="0.5" step="0.01" value="0.1">
+            <span id="paramCLabel">0.1</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-section">
+        <h3>インフレーション設定</h3>
+          <div class="control-group">
+            <label>密度閾値 ρ_c</label>
+            <div class="param-visual">
+              <input type="range" id="rhoThreshold" min="0.01" max="0.2" step="0.01" value="0.05">
+              <span id="rhoThresholdLabel">0.05</span>
+            </div>
+          </div>
+        <div class="control-group">
+          <label>量子揺らぎ</label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="quantumFluctuation" checked>
+            <span>有効</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="control-section">
+        <h3>シミュレーション制御</h3>
+        <div class="button-group">
+          <button id="startBtn" class="control-btn primary">開始</button>
+          <button id="pauseBtn" class="control-btn">一時停止</button>
+          <button id="resetBtn" class="control-btn">リセット</button>
+        </div>
+        <div class="control-group">
+          <label>シミュレーション速度</label>
+          <div class="param-visual">
+            <input type="range" id="speedSlider" min="1" max="100" step="1" value="10">
+            <span id="speedLabel">10x</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-section">
+        <h3>カメラ制御</h3>
+        <div class="control-group">
+          <label>自動追従</label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="autoFollow" checked>
+            <span>ボールを自動追従</span>
+          </label>
+        </div>
+        <div class="button-group">
+          <button id="resetCameraBtn" class="control-btn">カメラリセット</button>
+          <button id="focusBallBtn" class="control-btn">ボールにフォーカス</button>
+        </div>
+      </div>
+
+      <div class="status-section">
+        <div id="statusIndicator" class="status-indicator stable">
+          <span class="status-dot"></span>
+          <span id="statusText">安定状態</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

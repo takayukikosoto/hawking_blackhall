@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>超新星爆発シミュレーター — 恒星の崩壊からブラックホールへ</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./supernova.js"></script>
+</head>
+<body>
+  <!-- ナビゲーションバー -->
+  <nav class="main-nav">
+    <div class="nav-container">
+      <a href="index.html" class="nav-item">ホーキング放射</a>
+      <a href="inflation.html" class="nav-item">インフレーション</a>
+      <a href="supernova.html" class="nav-item active">超新星爆発</a>
+    </div>
+  </nav>
+
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div class="ui-header">
+      <h1>超新星爆発シミュレーター <small>Pro</small></h1>
+      <button id="toggleUI" class="toggle-btn" title="設定の表示/非表示">⚙</button>
+    </div>
+    <div id="uiContent" class="ui-content">
+      <div class="grid">
+        <div class="card">
+          <h3>初期恒星</h3>
+          <label>質量 (M<sub>☉</sub>)</label>
+          <input id="initialMass" type="range" min="10" max="100" step="1" value="20">
+          <input id="initialMassNumber" type="number" min="10" max="100" step="1" value="20">
+          <div class="kv"><span>半径</span><b id="initialRadius">—</b><span>R<sub>☉</sub></span></div>
+        </div>
+
+        <div class="card">
+          <h3>超新星爆発</h3>
+          <label>爆発エネルギー (×10⁴⁴ J)</label>
+          <input id="explosionEnergy" type="range" min="1" max="100" step="1" value="10">
+          <div class="kv"><span>速度</span><b id="explosionVelocity">—</b><span>km/s</span></div>
+          <label>物質放出率</label>
+          <input id="ejectaMass" type="range" min="0.1" max="1.0" step="0.1" value="0.5">
+          <div class="kv"><span>放出質量</span><b id="ejectaMassValue">—</b><span>M<sub>☉</sub></span></div>
+        </div>
+
+        <div class="card">
+          <h3>ブラックホール形成</h3>
+          <div class="kv"><span>残存質量</span><b id="remnantMass">—</b><span>M<sub>☉</sub></span></div>
+          <div class="kv"><span>シュヴァルツシルト半径</span><b id="remnantRs">—</b><span>km</span></div>
+          <div class="kv"><span>形成時間</span><b id="formationTime">—</b><span>秒</span></div>
+          <label id="bhFormedLabel" style="color: #ff4400; font-weight: bold; margin-top: 8px; display: none;">
+            ⚫ ブラックホール形成完了
+          </label>
+        </div>
+
+        <div class="card">
+          <h3>シミュレーション制御</h3>
+          <div class="row">
+            <button id="startBtn">開始</button>
+            <button id="pauseBtn">一時停止</button>
+            <button id="resetBtn">リセット</button>
+          </div>
+          <label>時間速度</label>
+          <input id="timeScale" type="range" min="1" max="1000" step="1" value="100">
+          <div class="kv"><span>経過時間</span><b id="elapsedTime">0.0</b><span>秒</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

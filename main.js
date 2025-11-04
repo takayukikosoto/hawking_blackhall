@@ -8,12 +8,20 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
   ? 'http://localhost:8001'
   : 'https://hawking-sim-api.onrender.com'; // Render にデプロイ時のURL（要変更）
 let useAPI = true; // APIを使用するかどうか（フォールバック用）
+let useQuantumPairGeneration = true; // 量子揺らぎのペア生成APIを使用するかどうか
 
 // API結果のキャッシュ（パフォーマンス最適化）
 let metricsCache = null;
 let spawnRateCache = null;
 let cacheTime = 0;
 const CACHE_DURATION = 100; // 100ms間キャッシュ（毎フレーム呼ばないように）
+
+// 量子ペア生成のキャッシュ
+let quantumPairsCache = null;
+let quantumPairsCacheTime = 0;
+const QUANTUM_PAIRS_CACHE_DURATION = 200; // 200ms間キャッシュ
+let lastSpawnTime = -1; // 初期値は-1（最初の呼び出しを許可）
+const MIN_SPAWN_INTERVAL = 0.1; // 最小生成間隔（秒）- 10回/秒まで
 
 // ---------- DOM ----------
 const canvas = document.getElementById('c');
@@ -40,12 +48,27 @@ const pauseBtn = document.getElementById('pauseBtn');
 const screenshotBtn = document.getElementById('screenshotBtn');
 const photonShotBtn = document.getElementById('photonShotBtn');
 const toggleUI = document.getElementById('toggleUI');
+const cameraUp = document.getElementById('cameraUp');
+const cameraDown = document.getElementById('cameraDown');
+const cameraLeft = document.getElementById('cameraLeft');
+const cameraRight = document.getElementById('cameraRight');
+const cameraCenter = document.getElementById('cameraCenter');
+const cameraZoomIn = document.getElementById('cameraZoomIn');
+const cameraZoomOut = document.getElementById('cameraZoomOut');
 const ui = document.getElementById('ui');
 const viewMode = document.getElementById('viewMode');
 const sectionPlane = document.getElementById('sectionPlane');
 const showGravityWell = document.getElementById('showGravityWell');
 const showSpacetimeGrid = document.getElementById('showSpacetimeGrid');
 const showHorizonHalo = document.getElementById('showHorizonHalo');
+const showEnergyStreamlines = document.getElementById('showEnergyStreamlines');
+const showParticleTrails = document.getElementById('showParticleTrails');
+const sizePhoton = document.getElementById('sizePhoton');
+const sizeNeutrino = document.getElementById('sizeNeutrino');
+const sizeGraviton = document.getElementById('sizeGraviton');
+const sizePhotonLabel = document.getElementById('sizePhotonLabel');
+const sizeNeutrinoLabel = document.getElementById('sizeNeutrinoLabel');
+const sizeGravitonLabel = document.getElementById('sizeGravitonLabel');
 
 let paused = false;
 let uiCollapsed = false;
@@ -209,6 +232,14 @@ showHorizonHalo.addEventListener('change', ()=>{
   if(horizonHalo) horizonHalo.visible = showHorizonHalo.checked;
 });
 
+showEnergyStreamlines.addEventListener('change', ()=>{
+  if(energyStreamlines) energyStreamlines.visible = showEnergyStreamlines.checked;
+});
+
+showParticleTrails.addEventListener('change', ()=>{
+  // 軌跡の表示/非表示はtick関数で処理
+});
+
 // ---------- Lighting ----------
 scene.add(new THREE.DirectionalLight(0xffffff, 1.6)).position.set(10,20,10);
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
@@ -252,6 +283,11 @@ disk.rotation.x = -Math.PI/2; bhGroup.add(disk);
 // ---------- 重力ポテンシャルメッシュ（重力の井戸の可視化） ----------
 let gravityWellMesh = null;
 let spacetimeGrid = null;
+let energyStreamlines = null;
+let particleTrails = new Map(); // パーティクルID -> 軌跡配列
+const MAX_TRAIL_LENGTH = 50; // 軌跡の最大長さ
+const TRAIL_UPDATE_INTERVAL = 2; // 軌跡更新間隔（フレーム）
+let trailUpdateCounter = 0;
 
 function createGravityWellMesh(rsVisual) {
   if (gravityWellMesh) {
@@ -396,6 +432,208 @@ function createSpacetimeGrid(rsVisual) {
   scene.add(spacetimeGrid);
 }
 
+// ---------- エネルギー流線の作成 ----------
+function createEnergyStreamlines(rsVisual) {
+  if (energyStreamlines) {
+    scene.remove(energyStreamlines);
+    energyStreamlines.geometry.dispose();
+    energyStreamlines.material.dispose();
+  }
+
+  const numStreamlines = 30; // 流線の数
+  const streamlineLength = 100; // 流線の長さ
+  const stepSize = 0.5;
+  
+  const points = [];
+  const colors = [];
+  
+  // サンプリング位置を生成（球面上）
+  for (let i = 0; i < numStreamlines; i++) {
+    const theta = (i / numStreamlines) * Math.PI * 2;
+    const phi = Math.PI / 2 - (i % 10) * 0.2;
+    const radius = rsVisual * 3 + (i % 5) * rsVisual * 2;
+    
+    const startX = radius * Math.sin(phi) * Math.cos(theta);
+    const startY = radius * Math.cos(phi);
+    const startZ = radius * Math.sin(phi) * Math.sin(theta);
+    
+    let x = startX;
+    let y = startY;
+    let z = startZ;
+    
+    // 流線の開始点
+    points.push(x, y, z);
+    colors.push(0.2, 0.6, 1.0); // 青系
+    
+    // 流線を追跡
+    for (let step = 0; step < streamlineLength; step++) {
+      const r2 = x*x + y*y + z*z;
+      const r = Math.sqrt(r2) + 1e-6;
+      
+      // ブラックホールに近づきすぎたら停止
+      if (r < rsVisual * 1.1) break;
+      
+      // 速度場を計算（パーティクルの平均速度方向を模擬）
+      // 放射方向の速度成分
+      const toCenter = new THREE.Vector3(-x, -y, -z).normalize();
+      const radialSpeed = 2.0;
+      
+      // 角運動量を保存するための接線方向速度
+      const tangent = new THREE.Vector3().crossVectors(
+        new THREE.Vector3(0, 1, 0),
+        toCenter
+      ).normalize();
+      const tangentialSpeed = Math.sqrt(rsVisual * 5.0 / r); // ケプラー速度
+      
+      // 速度ベクトル
+      const vx = toCenter.x * radialSpeed + tangent.x * tangentialSpeed;
+      const vy = toCenter.y * radialSpeed + tangent.y * tangentialSpeed;
+      const vz = toCenter.z * radialSpeed + tangent.z * tangentialSpeed;
+      
+      // 位置を更新
+      x += vx * stepSize;
+      y += vy * stepSize;
+      z += vz * stepSize;
+      
+      points.push(x, y, z);
+      
+      // 距離に応じて色を変化（エネルギーが高いほど明るく）
+      const distFactor = Math.min(1.0, r / (rsVisual * 10));
+      colors.push(0.2 + distFactor * 0.8, 0.6 + distFactor * 0.4, 1.0);
+    }
+  }
+  
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.4,
+    linewidth: 1
+  });
+  
+  energyStreamlines = new THREE.LineSegments(geometry, material);
+  energyStreamlines.visible = false; // デフォルトで非表示
+  scene.add(energyStreamlines);
+}
+
+// ---------- パーティクル軌跡の更新 ----------
+function updateParticleTrails() {
+  if (!showParticleTrails.checked) {
+    // 軌跡をクリア
+    particleTrails.forEach((trail, id) => {
+      if (trail.line) {
+        scene.remove(trail.line);
+        trail.line.geometry.dispose();
+        trail.line.material.dispose();
+      }
+    });
+    particleTrails.clear();
+    return;
+  }
+  
+  trailUpdateCounter++;
+  if (trailUpdateCounter < TRAIL_UPDATE_INTERVAL) return;
+  trailUpdateCounter = 0;
+  
+  const rsVisual = bhMesh.scale.x;
+  
+  // アクティブなパーティクルの軌跡を更新
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    if (ages[i] >= lifetimes[i]) {
+      // 死んでいるパーティクルは軌跡を削除
+      if (particleTrails.has(i)) {
+        const trail = particleTrails.get(i);
+        if (trail.line) {
+          scene.remove(trail.line);
+          trail.line.geometry.dispose();
+          trail.line.material.dispose();
+        }
+        particleTrails.delete(i);
+      }
+      continue;
+    }
+    
+    const i3 = i * 3;
+    const x = positions[i3 + 0];
+    const y = positions[i3 + 1];
+    const z = positions[i3 + 2];
+    
+    // 無効な位置はスキップ
+    if (Math.abs(x) > 1e5) continue;
+    
+    const r = Math.sqrt(x*x + y*y + z*z);
+    if (r < rsVisual * 1.1) continue; // ブラックホールに近すぎる場合はスキップ
+    
+    // 軌跡を取得または作成
+    if (!particleTrails.has(i)) {
+      particleTrails.set(i, {
+        positions: [],
+        species: species[i]
+      });
+    }
+    
+    const trail = particleTrails.get(i);
+    
+    // 現在の位置を追加
+    trail.positions.push(new THREE.Vector3(x, y, z));
+    
+    // 最大長さを超えたら古いものを削除
+    if (trail.positions.length > MAX_TRAIL_LENGTH) {
+      trail.positions.shift();
+    }
+    
+    // 軌跡が十分な長さになったら描画
+    if (trail.positions.length >= 2) {
+      // 既存のLineを削除
+      if (trail.line) {
+        scene.remove(trail.line);
+        trail.line.geometry.dispose();
+        trail.line.material.dispose();
+      }
+      
+      // 新しいLineを作成
+      const trailPoints = trail.positions.map(p => new THREE.Vector3(p.x, p.y, p.z));
+      const geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+      
+      // 種別に応じた色
+      let color;
+      if (trail.species === 0) {
+        color = new THREE.Color(1.0, 0.8, 0.6); // フォトン（暖色）
+      } else if (trail.species === 1) {
+        color = new THREE.Color(0.6, 0.9, 1.0); // ニュートリノ（シアン）
+      } else {
+        color = new THREE.Color(0.85, 0.8, 1.0); // グラビトン（紫）
+      }
+      
+      const material = new THREE.LineBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.3,
+        linewidth: 1
+      });
+      
+      trail.line = new THREE.Line(geometry, material);
+      scene.add(trail.line);
+    }
+  }
+  
+  // 死んだパーティクルの軌跡をフェードアウト
+  particleTrails.forEach((trail, id) => {
+    if (ages[id] >= lifetimes[id] && trail.line) {
+      trail.line.material.opacity *= 0.95;
+      if (trail.line.material.opacity < 0.01) {
+        scene.remove(trail.line);
+        trail.line.geometry.dispose();
+        trail.line.material.dispose();
+        particleTrails.delete(id);
+      }
+    }
+  });
+}
+
 // Star background
 const starGeo = new THREE.SphereGeometry(500, 32, 32);
 const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent:true, opacity:0.06 });
@@ -482,7 +720,7 @@ async function setupParticleSystem(){
     depthWrite: false, 
     blending: THREE.AdditiveBlending,
     uniforms: { 
-      uPointSize: {value: 20.0} // パーティクルを少し大きくして視認性向上
+      uPointSizes: {value: new THREE.Vector3(20.0, 18.0, 16.0)} // [フォトン, ニュートリノ, グラビトン]
     },
     vertexShader: particleRenderVS,
     fragmentShader: `precision highp float; 
@@ -541,6 +779,9 @@ async function setupParticleSystem(){
   // 初期メトリクスを更新
   await updateBHScale();
   await updateMetrics();
+  
+  // 初期粒子サイズを設定
+  updateParticleSizes();
 }
 
 // ---------- Simulation State ----------
@@ -696,6 +937,7 @@ async function updateBHScale(){
   // 重力ポテンシャルメッシュと時空グリッドを更新
   createGravityWellMesh(s);
   createSpacetimeGrid(s);
+  createEnergyStreamlines(s);
   
   // キャッシュをクリア（質量が変わったので）
   metricsCache = null;
@@ -866,10 +1108,183 @@ function spawnParticleAt(i, tempK){
   }
 }
 
+// 量子揺らぎのペア生成APIを呼び出す（キャッシュ付き）
+async function fetchQuantumPairs(massSolar, dt, useCache = true) {
+  const now = performance.now();
+  const cacheKey = `${massSolar}_${dt.toFixed(3)}`;
+  
+  // キャッシュチェック
+  if (useCache && quantumPairsCache && 
+      quantumPairsCache.key === cacheKey && 
+      (now - quantumPairsCacheTime) < QUANTUM_PAIRS_CACHE_DURATION) {
+    return quantumPairsCache.data;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/pair-generation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mass_solar: massSolar,
+        dt: dt
+      })
+    });
+    
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    const result = await response.json();
+    
+    // キャッシュに保存
+    quantumPairsCache = { key: cacheKey, data: result };
+    quantumPairsCacheTime = now;
+    
+    return result;
+  } catch (error) {
+    console.warn('Quantum pair generation API failed, using fallback:', error);
+    return null;
+  }
+}
+
 async function spawnParticles(dt){
   const rateUI = parseFloat(pairRate.value);
   
-  // APIから生成率と温度を取得
+  // 最小生成間隔をチェック（初期状態では常に許可）
+  const currentTime = performance.now() / 1000; // 秒単位
+  const canCallAPI = (lastSpawnTime < 0 || (currentTime - lastSpawnTime >= MIN_SPAWN_INTERVAL));
+  
+  // 量子揺らぎのペア生成APIを使用する場合（間隔が十分開いている場合のみ）
+  if (useQuantumPairGeneration && useAPI && canCallAPI) {
+    try {
+      // より大きなdtで一度に取得（呼び出し頻度を減らす）
+      const accumulatedDt = Math.min(dt * 5, 0.5); // 最大0.5秒
+      const quantumData = await fetchQuantumPairs(BH_Mass_solar, accumulatedDt, true);
+      if (quantumData && quantumData.particles && quantumData.particles.length > 0) {
+        const particles = quantumData.particles;
+        const temp = quantumData.temperature;
+        
+        // 死んだパーティクルのインデックスを事前に収集（ペア用に2倍必要）
+        const deadIndices = [];
+        for (let k=0; k<MAX_PARTICLES; k++){
+          if (ages[k] >= lifetimes[k]) {
+            deadIndices.push(k);
+            if (deadIndices.length >= particles.length * 2) break; // ペアなので2倍必要
+          }
+        }
+        
+        const availablePairs = Math.floor(deadIndices.length / 2);
+        const pairsToCreate = Math.min(particles.length, availablePairs);
+        
+        // 量子揺らぎのペア生成を使用
+        for (let p=0; p<pairsToCreate; p++){
+          const particle = particles[p];
+          const idx1 = deadIndices[p*2];
+          const idx2 = deadIndices[p*2 + 1];
+          
+          // 粒子種別をマッピング（"γ" -> 0, "ν" -> 1, "g" -> 2）
+          let sp = 0;
+          if (particle.type === "ν") sp = 1;
+          else if (particle.type === "g") sp = 2;
+          
+          // エネルギーから色を計算
+          const E = particle.energy;
+          let col;
+          if (sp === 0) { // photon
+            const rgb = energyToRgb(E);
+            col = new THREE.Color(rgb[0], rgb[1], rgb[2]);
+          } else if (sp === 1) { // neutrino
+            col = new THREE.Color(0.6, 0.9, 1.0);
+          } else { // graviton
+            col = new THREE.Color(0.85, 0.8, 1.0);
+          }
+          
+          // ライフタイム計算（エネルギーに基づく）
+          const kT = kB * temp;
+          const x = E / kT;
+          const baseLife = 8.0;
+          let life = baseLife / Math.sqrt(x * 0.8 + 0.2);
+          if (sp === 1) life *= 1.6;
+          if (sp === 2) life *= 1.3;
+          
+          // 生成位置（イベントホライズン付近）
+          const rsVisual = bhMesh.scale.x;
+          const r0 = rsVisual * (1.01 + Math.random() * 0.08);
+          const theta = Math.acos(1 - 2 * Math.random());
+          const phi = Math.random() * Math.PI * 2;
+          const sx = r0 * Math.sin(theta) * Math.cos(phi);
+          const sy = r0 * Math.cos(theta);
+          const sz = r0 * Math.sin(theta) * Math.sin(phi);
+          
+          const spawnPos = new THREE.Vector3(sx, sy, sz);
+          const dirFromBH = spawnPos.clone().normalize();
+          
+          // APIから取得した速度ベクトルを使用
+          const velVec = new THREE.Vector3(
+            particle.velocity[0],
+            particle.velocity[1],
+            particle.velocity[2]
+          );
+          
+          // パーティクル1: ブラックホールに落ちる（内側へ）
+          const i1_3 = idx1 * 3;
+          species[idx1] = sp;
+          positions[i1_3+0] = sx;
+          positions[i1_3+1] = sy;
+          positions[i1_3+2] = sz;
+          const velInward = dirFromBH.clone().multiplyScalar(-velVec.length() * 0.7);
+          velocities[i1_3+0] = velInward.x;
+          velocities[i1_3+1] = velInward.y;
+          velocities[i1_3+2] = velInward.z;
+          lifetimes[idx1] = life * 0.3;
+          ages[idx1] = 0.0;
+          temps[idx1] = temp;
+          colors[i1_3+0] = col.r * 0.6;
+          colors[i1_3+1] = col.g * 0.6;
+          colors[i1_3+2] = col.b * 0.6;
+          
+          // パーティクル2: 外側に放射される
+          const i2_3 = idx2 * 3;
+          species[idx2] = sp;
+          positions[i2_3+0] = sx;
+          positions[i2_3+1] = sy;
+          positions[i2_3+2] = sz;
+          velocities[i2_3+0] = velVec.x;
+          velocities[i2_3+1] = velVec.y;
+          velocities[i2_3+2] = velVec.z;
+          lifetimes[idx2] = life;
+          ages[idx2] = 0.0;
+          temps[idx2] = temp;
+          colors[i2_3+0] = col.r;
+          colors[i2_3+1] = col.g;
+          colors[i2_3+2] = col.b;
+          
+          // Speciesバッファも更新
+          if (particleGeo.attributes.aSpecies) {
+            particleGeo.attributes.aSpecies.array[idx1] = sp;
+            particleGeo.attributes.aSpecies.array[idx2] = sp;
+            particleGeo.attributes.aSpecies.needsUpdate = true;
+          }
+        }
+        
+        if (pairsToCreate > 0) {
+          needsBufferUpdate = true;
+          lastSpawnTime = currentTime; // パーティクル生成成功時に時刻を更新
+          return; // 量子揺らぎAPIを使用してパーティクルを生成した場合はここで終了
+        }
+        // パーティクルが生成されなかった場合はフォールバックに続行
+      } else {
+        // APIからのデータが空の場合はフォールバックに続行
+      }
+    } catch (error) {
+      console.warn('Quantum pair generation failed, falling back to standard method:', error);
+      // エラーが続く場合は一時的に無効化
+      if (error.message && error.message.includes('Failed to fetch')) {
+        useQuantumPairGeneration = false;
+      }
+      // エラー時はフォールバックに続行
+    }
+  }
+  
+  // フォールバック: 従来の方法（APIを使わない、または間隔が短い場合、またはAPIが失敗した場合）
+  // この部分は常に実行される（APIが成功した場合は上でreturnされる）
   const spawnData = await fetchSpawnRate(BH_Mass_solar, rateUI);
   const rate = spawnData.spawn_rate_per_second;
   
@@ -1029,6 +1444,35 @@ lensStrength.addEventListener('input', ()=>{ lensStrengthLabel.textContent = par
 lensChrom.addEventListener('input', ()=>{ if(lensMaterial) lensMaterial.uniforms.uChrom.value=parseFloat(lensChrom.value); });
 lensEnable.addEventListener('change', ()=>{ if(lensMaterial) lensMaterial.uniforms.uEnabled.value=lensEnable.checked; });
 
+// 粒子サイズの更新
+function updateParticleSizes() {
+  if (particleMat && particleMat.uniforms.uPointSizes) {
+    particleMat.uniforms.uPointSizes.value.set(
+      parseFloat(sizePhoton.value),
+      parseFloat(sizeNeutrino.value),
+      parseFloat(sizeGraviton.value)
+    );
+  }
+}
+
+sizePhoton.addEventListener('input', ()=>{
+  const val = parseFloat(sizePhoton.value);
+  sizePhotonLabel.textContent = val;
+  updateParticleSizes();
+});
+
+sizeNeutrino.addEventListener('input', ()=>{
+  const val = parseFloat(sizeNeutrino.value);
+  sizeNeutrinoLabel.textContent = val;
+  updateParticleSizes();
+});
+
+sizeGraviton.addEventListener('input', ()=>{
+  const val = parseFloat(sizeGraviton.value);
+  sizeGravitonLabel.textContent = val;
+  updateParticleSizes();
+});
+
 resetBtn.addEventListener('click', ()=>{
   for (let i=0; i<MAX_PARTICLES; i++){
     const i3 = i*3;
@@ -1045,13 +1489,38 @@ resetBtn.addEventListener('click', ()=>{
   }
   needsBufferUpdate = true;
 });
-pauseBtn.addEventListener('click', ()=>{ paused=!paused; pauseBtn.textContent = paused? 'Resume' : 'Pause'; });
+pauseBtn.addEventListener('click', ()=>{ paused=!paused; pauseBtn.textContent = paused? '再開' : '一時停止'; });
 screenshotBtn.addEventListener('click', ()=>{ const dataURL = renderer.domElement.toDataURL('image/png'); const a=document.createElement('a'); a.href=dataURL; a.download='hawking-sim.png'; a.click(); });
 
 // ---------- フォトンショット発射機能（派手なビーム表示） ----------
-let currentPhotonBeam = null;
-let photonBeamAge = 0;
+let currentPhotonBeams = []; // 複数のビームを管理
 const PHOTON_BEAM_LIFETIME = 2.5; // 2.5秒で消える（より長く見えるように）
+
+// 四方八方の方向を定義（14方向：6軸方向 + 8対角線方向）
+function getAllDirections() {
+  const directions = [];
+  
+  // 6軸方向（±X, ±Y, ±Z）
+  directions.push(new THREE.Vector3(1, 0, 0));   // +X
+  directions.push(new THREE.Vector3(-1, 0, 0));  // -X
+  directions.push(new THREE.Vector3(0, 1, 0));   // +Y
+  directions.push(new THREE.Vector3(0, -1, 0));  // -Y
+  directions.push(new THREE.Vector3(0, 0, 1));   // +Z
+  directions.push(new THREE.Vector3(0, 0, -1)); // -Z
+  
+  // 8対角線方向（立方体の頂点方向）
+  const sqrt3 = 1 / Math.sqrt(3);
+  directions.push(new THREE.Vector3(sqrt3, sqrt3, sqrt3));
+  directions.push(new THREE.Vector3(-sqrt3, sqrt3, sqrt3));
+  directions.push(new THREE.Vector3(sqrt3, -sqrt3, sqrt3));
+  directions.push(new THREE.Vector3(sqrt3, sqrt3, -sqrt3));
+  directions.push(new THREE.Vector3(-sqrt3, -sqrt3, sqrt3));
+  directions.push(new THREE.Vector3(-sqrt3, sqrt3, -sqrt3));
+  directions.push(new THREE.Vector3(sqrt3, -sqrt3, -sqrt3));
+  directions.push(new THREE.Vector3(-sqrt3, -sqrt3, -sqrt3));
+  
+  return directions;
+}
 
 function firePhotonShot() {
   // ボタンの派手なアニメーション効果
@@ -1063,29 +1532,42 @@ function firePhotonShot() {
   }, 150);
   
   // 既存のビームがあれば削除
-  if (currentPhotonBeam) {
-    scene.remove(currentPhotonBeam);
-    currentPhotonBeam.traverse(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material && child.material.dispose) child.material.dispose();
-    });
-  }
+  currentPhotonBeams.forEach(beamData => {
+    if (beamData && beamData.beam) {
+      scene.remove(beamData.beam);
+      beamData.beam.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material && child.material.dispose) child.material.dispose();
+      });
+    }
+  });
+  currentPhotonBeams = [];
   
-  // カメラの方向からフォトンを発射
-  const direction = new THREE.Vector3(0, 0, -1);
-  direction.applyQuaternion(camera.quaternion);
+  // 四方八方の方向を取得
+  const directions = getAllDirections();
+  const startDistance = 50; // ブラックホールから離れた位置（十分に遠い距離）
   
-  // カメラ位置から少し前方から発射
-  const startPos = camera.position.clone();
-  const forward = direction.clone().multiplyScalar(8); // より遠くから
-  startPos.add(forward);
-  
-  // フォトンの軌道を計算して超派手なビームで表示
-  currentPhotonBeam = createPhotonBeam(startPos, direction);
-  photonBeamAge = 0;
+  // 各方向からフォトンを発射
+  directions.forEach((dir, index) => {
+    // ブラックホールの中心（原点）から離れた位置の14箇所から発射
+    const startPos = dir.clone().multiplyScalar(startDistance);
+    
+    // ブラックホールの中心（原点）に向かう方向
+    const bhCenter = new THREE.Vector3(0, 0, 0);
+    const direction = bhCenter.clone().sub(startPos).normalize();
+    
+    // フォトンの軌道を計算して超派手なビームで表示
+    const beam = createPhotonBeam(startPos, direction, index);
+    if (beam) {
+      currentPhotonBeams.push({
+        beam: beam,
+        age: 0
+      });
+    }
+  });
 }
 
-function createPhotonBeam(startPos, direction) {
+function createPhotonBeam(startPos, direction, beamIndex = 0) {
   const points = [];
   const steps = 400; // より多くのステップで滑らかに
   const stepSize = 0.25;
@@ -1230,44 +1712,7 @@ function createPhotonBeam(startPos, direction) {
     beamGroup.add(glowLine);
   }
   
-  // 発射点の超派手なエフェクト（複数のリング）
-  for (let ring = 0; ring < 5; ring++) {
-    const emitterGeo = new THREE.RingGeometry(ring * 0.3, ring * 0.3 + 0.4, 64);
-    const emitterMat = new THREE.MeshBasicMaterial({
-      color: ring === 0 ? 0x00ffff : (ring === 1 ? 0x88ffff : (ring === 2 ? 0x00aaff : (ring === 3 ? 0xffffff : 0x00ffff))),
-      transparent: true,
-      opacity: 0.9 - ring * 0.15,
-      side: THREE.DoubleSide
-    });
-    const emitter = new THREE.Mesh(emitterGeo, emitterMat);
-    emitter.position.copy(startPos);
-    emitter.lookAt(startPos.clone().add(direction));
-    emitter.userData.startTime = performance.now();
-    emitter.userData.ringIndex = ring;
-    beamGroup.add(emitter);
-  }
-  
-  // 発射点のパーティクル風エフェクト（複数の点）
-  for (let p = 0; p < 20; p++) {
-    const particleGeo = new THREE.SphereGeometry(0.1, 8, 8);
-    const particleMat = new THREE.MeshBasicMaterial({
-      color: Math.random() > 0.5 ? 0x00ffff : 0x88ffff,
-      transparent: true,
-      opacity: 1.0
-    });
-    const particle = new THREE.Mesh(particleGeo, particleMat);
-    const angle = (p / 20) * Math.PI * 2;
-    const radius = 0.5 + Math.random() * 0.5;
-    particle.position.copy(startPos);
-    particle.position.add(new THREE.Vector3(
-      Math.cos(angle) * radius,
-      Math.sin(angle) * radius,
-      0
-    ).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), direction)));
-    particle.userData.velocity = direction.clone().multiplyScalar(0.5 + Math.random() * 0.5);
-    particle.userData.startTime = performance.now();
-    beamGroup.add(particle);
-  }
+  // 発射点のエフェクトは削除（リングとパーティクルを削除）
   
   scene.add(beamGroup);
   
@@ -1275,6 +1720,211 @@ function createPhotonBeam(startPos, direction) {
 }
 
 photonShotBtn.addEventListener('click', firePhotonShot);
+
+// ---------- カメラ操作（キーボード + UIボタン） ----------
+const CAMERA_MOVE_SPEED = 2.0;
+const CAMERA_ROTATE_SPEED = 0.05;
+const CAMERA_ZOOM_SPEED = 2.0;
+
+// カメラを移動（パン）
+function moveCamera(direction) {
+  if (!camera || !controls || isCrossSectionMode) return;
+  
+  const moveVector = new THREE.Vector3();
+  const right = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  
+  camera.getWorldDirection(new THREE.Vector3().negate()); // forward
+  right.setFromMatrixColumn(camera.matrixWorld, 0);
+  up.setFromMatrixColumn(camera.matrixWorld, 1);
+  
+  switch(direction) {
+    case 'up':
+      moveVector.copy(up).multiplyScalar(CAMERA_MOVE_SPEED);
+      break;
+    case 'down':
+      moveVector.copy(up).multiplyScalar(-CAMERA_MOVE_SPEED);
+      break;
+    case 'left':
+      moveVector.copy(right).multiplyScalar(-CAMERA_MOVE_SPEED);
+      break;
+    case 'right':
+      moveVector.copy(right).multiplyScalar(CAMERA_MOVE_SPEED);
+      break;
+  }
+  
+  camera.position.add(moveVector);
+  controls.target.add(moveVector);
+  controls.update();
+}
+
+// カメラを回転
+function rotateCamera(direction) {
+  if (!camera || !controls || isCrossSectionMode) return;
+  
+  const right = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  right.setFromMatrixColumn(camera.matrixWorld, 0);
+  up.setFromMatrixColumn(camera.matrixWorld, 1);
+  
+  const rotationAxis = new THREE.Vector3();
+  let angle = CAMERA_ROTATE_SPEED;
+  
+  switch(direction) {
+    case 'up':
+      rotationAxis.copy(right);
+      break;
+    case 'down':
+      rotationAxis.copy(right);
+      angle = -angle;
+      break;
+    case 'left':
+      rotationAxis.copy(up);
+      break;
+    case 'right':
+      rotationAxis.copy(up);
+      angle = -angle;
+      break;
+  }
+  
+  const quaternion = new THREE.Quaternion().setFromAxisAngle(rotationAxis, angle);
+  const directionToTarget = controls.target.clone().sub(camera.position);
+  directionToTarget.applyQuaternion(quaternion);
+  controls.target.copy(camera.position).add(directionToTarget);
+  controls.update();
+}
+
+// カメラをズーム
+function zoomCamera(direction) {
+  if (!camera || !controls || isCrossSectionMode) return;
+  
+  const directionVec = new THREE.Vector3();
+  camera.getWorldDirection(directionVec);
+  directionVec.negate();
+  
+  if (direction === 'in') {
+    camera.position.add(directionVec.multiplyScalar(CAMERA_ZOOM_SPEED));
+  } else {
+    camera.position.add(directionVec.multiplyScalar(-CAMERA_ZOOM_SPEED));
+  }
+  
+  controls.update();
+}
+
+// カメラをリセット
+function resetCamera() {
+  if (!camera || !controls || isCrossSectionMode) return;
+  
+  camera.position.set(0, 15, 42);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+// UIボタンのイベントリスナー
+cameraUp.addEventListener('click', () => moveCamera('up'));
+cameraDown.addEventListener('click', () => moveCamera('down'));
+cameraLeft.addEventListener('click', () => moveCamera('left'));
+cameraRight.addEventListener('click', () => moveCamera('right'));
+cameraCenter.addEventListener('click', resetCamera);
+cameraZoomIn.addEventListener('click', () => zoomCamera('in'));
+cameraZoomOut.addEventListener('click', () => zoomCamera('out'));
+
+// 長押し対応
+let cameraMoveInterval = null;
+function startCameraMove(direction) {
+  if (cameraMoveInterval) return;
+  moveCamera(direction);
+  cameraMoveInterval = setInterval(() => moveCamera(direction), 50);
+}
+function stopCameraMove() {
+  if (cameraMoveInterval) {
+    clearInterval(cameraMoveInterval);
+    cameraMoveInterval = null;
+  }
+}
+
+[cameraUp, cameraDown, cameraLeft, cameraRight].forEach((btn, index) => {
+  const directions = ['up', 'down', 'left', 'right'];
+  btn.addEventListener('mousedown', () => startCameraMove(directions[index]));
+  btn.addEventListener('mouseup', stopCameraMove);
+  btn.addEventListener('mouseleave', stopCameraMove);
+});
+
+let cameraZoomInterval = null;
+function startCameraZoom(direction) {
+  if (cameraZoomInterval) return;
+  zoomCamera(direction);
+  cameraZoomInterval = setInterval(() => zoomCamera(direction), 50);
+}
+function stopCameraZoom() {
+  if (cameraZoomInterval) {
+    clearInterval(cameraZoomInterval);
+    cameraZoomInterval = null;
+  }
+}
+cameraZoomIn.addEventListener('mousedown', () => startCameraZoom('in'));
+cameraZoomIn.addEventListener('mouseup', stopCameraZoom);
+cameraZoomIn.addEventListener('mouseleave', stopCameraZoom);
+cameraZoomOut.addEventListener('mousedown', () => startCameraZoom('out'));
+cameraZoomOut.addEventListener('mouseup', stopCameraZoom);
+cameraZoomOut.addEventListener('mouseleave', stopCameraZoom);
+
+// キーボードショートカット
+const keysPressed = new Set();
+document.addEventListener('keydown', (e) => {
+  if (isCrossSectionMode) return; // 断面モードでは無効
+  
+  keysPressed.add(e.key.toLowerCase());
+  
+  // 修飾キー（Cmd, Option, Ctrl）を押しながらの操作
+  const isModifierPressed = e.metaKey || e.altKey || e.ctrlKey;
+  
+  if (isModifierPressed) {
+    switch(e.key.toLowerCase()) {
+      case 'arrowup':
+      case 'w':
+        e.preventDefault();
+        moveCamera('up');
+        break;
+      case 'arrowdown':
+      case 's':
+        e.preventDefault();
+        moveCamera('down');
+        break;
+      case 'arrowleft':
+      case 'a':
+        e.preventDefault();
+        moveCamera('left');
+        break;
+      case 'arrowright':
+      case 'd':
+        e.preventDefault();
+        moveCamera('right');
+        break;
+      case '+':
+      case '=':
+        e.preventDefault();
+        zoomCamera('in');
+        break;
+      case '-':
+      case '_':
+        e.preventDefault();
+        zoomCamera('out');
+        break;
+    }
+  }
+  
+  // 単独キーでの操作
+  switch(e.key.toLowerCase()) {
+    case 'r':
+      resetCamera();
+      break;
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keysPressed.delete(e.key.toLowerCase());
+});
 
 // ---------- Animate with lens postprocess ----------
 let last = performance.now();
@@ -1298,56 +1948,35 @@ function tick(now){
 
   diskMat.uniforms.uTime.value = now*0.001;
   
-  // フォトンビームのアニメーションとフェードアウト
-  if (currentPhotonBeam) {
-    photonBeamAge += dt;
-    const fade = 1.0 - (photonBeamAge / PHOTON_BEAM_LIFETIME);
+  // フォトンビームのアニメーションとフェードアウト（複数ビーム対応）
+  currentPhotonBeams = currentPhotonBeams.filter(beamData => {
+    if (!beamData || !beamData.beam) return false;
+    
+    beamData.age += dt;
+    const fade = 1.0 - (beamData.age / PHOTON_BEAM_LIFETIME);
     const time = now * 0.001;
     
-    // ビームの各要素をアニメーション
-    currentPhotonBeam.children.forEach((child, index) => {
-      // リングエフェクトの拡大アニメーション
-      if (child.userData && child.userData.ringIndex !== undefined) {
-        const ringAge = (now - child.userData.startTime) * 0.001;
-        const scale = 1.0 + ringAge * 2.0;
-        child.scale.set(scale, scale, 1);
-        if (child.material) {
-          child.material.opacity = Math.max(0, (0.9 - child.userData.ringIndex * 0.15) * fade * (1.0 - ringAge * 0.5));
-        }
-      }
-      
-      // パーティクルエフェクトの移動とフェード
-      if (child.userData && child.userData.velocity) {
-        if (!child.userData.initialPos) {
-          child.userData.initialPos = child.position.clone();
-        }
-        const particleAge = (now - child.userData.startTime) * 0.001;
-        const velocity = child.userData.velocity.clone().multiplyScalar(particleAge);
-        child.position.copy(child.userData.initialPos).add(velocity);
-        if (child.material) {
-          child.material.opacity = Math.max(0, fade * (1.0 - particleAge * 2.0));
-          child.scale.setScalar(1.0 + particleAge * 3.0);
-        }
-      }
-      
+    // ビームの各要素をアニメーション（リングとパーティクルは削除済み）
+    beamData.beam.children.forEach((child, index) => {
       // ラインのフェードアウトとパルス
-      if (child.material && child.material.opacity !== undefined && !child.userData.ringIndex && !child.userData.velocity) {
-        const pulse = 1.0 + Math.sin(time * 15.0 + index) * 0.2;
+      if (child.material && child.material.opacity !== undefined) {
+        const pulse = 1.0 + Math.sin(time * 15.0 + index + beamData.age * 10) * 0.2;
         child.material.opacity = Math.max(0, fade * pulse * (index < 5 ? 1.0 : (0.6 - (index - 5) * 0.05)));
       }
     });
     
     // 寿命が来たら削除
-    if (photonBeamAge >= PHOTON_BEAM_LIFETIME) {
-      scene.remove(currentPhotonBeam);
-      currentPhotonBeam.traverse(child => {
+    if (beamData.age >= PHOTON_BEAM_LIFETIME) {
+      scene.remove(beamData.beam);
+      beamData.beam.traverse(child => {
         if (child.geometry) child.geometry.dispose();
         if (child.material && child.material.dispose) child.material.dispose();
       });
-      currentPhotonBeam = null;
-      photonBeamAge = 0;
+      return false; // フィルターで削除
     }
-  }
+    
+    return true; // 生きているビームは保持
+  });
 
   // パーティクル数の変更を処理
   const desired = parseInt(maxParticles.value);
@@ -1359,8 +1988,13 @@ function tick(now){
 
   // パーティクルの更新
   if (!paused){ 
-    spawnParticles(dt); 
-    updateParticles(dt); 
+    // spawnParticlesは非同期なので、awaitなしで呼ぶ（Promiseはバックグラウンドで処理）
+    // API呼び出し間隔の制御はspawnParticles内で行う
+    spawnParticles(dt).catch(err => {
+      console.warn('spawnParticles error:', err);
+    });
+    updateParticles(dt);
+    updateParticleTrails(); // 軌跡の更新
   }
 
   // バッファの更新（パーティクルが動いている場合は毎フレーム更新が必要）

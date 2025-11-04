@@ -11,7 +11,7 @@ attribute float aSpecies;
 varying float vAlpha;
 varying vec3 vColor;
 
-uniform float uPointSize;
+uniform vec3 uPointSizes; // [フォトン, ニュートリノ, グラビトン]
 
 void main() {
     // ライフタイムに基づくアルファ値
@@ -37,8 +37,18 @@ void main() {
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     
+    // 粒子種別に応じたポイントサイズを選択
+    float baseSize;
+    if (aSpecies < 0.5) {
+        baseSize = uPointSizes.x; // フォトン
+    } else if (aSpecies < 1.5) {
+        baseSize = uPointSizes.y; // ニュートリノ
+    } else {
+        baseSize = uPointSizes.z; // グラビトン
+    }
+    
     // ポイントサイズ（距離とライフタイムに基づく）
-    float pointSize = uPointSize * (1.0 + 2.0 * lifeT);
+    float pointSize = baseSize * (1.0 + 2.0 * lifeT);
     if (-mvPosition.z > 0.001) {
         pointSize /= -mvPosition.z;
     }

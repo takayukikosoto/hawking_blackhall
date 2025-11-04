@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hawking Radiation Simulator — Spectrum, Species & Lensing</title>
+  <title>ホーキング放射シミュレーター — スペクトル、粒子種別、重力レンズ</title>
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
   {
@@ -16,17 +16,26 @@
   <script type="module" src="./main.js"></script>
 </head>
 <body>
+  <!-- ナビゲーションバー -->
+  <nav class="main-nav">
+    <div class="nav-container">
+      <a href="index.html" class="nav-item active">ホーキング放射</a>
+      <a href="inflation.html" class="nav-item">インフレーション</a>
+      <a href="supernova.html" class="nav-item">超新星爆発</a>
+    </div>
+  </nav>
+  
   <canvas id="c"></canvas>
   <div id="ui">
     <div class="ui-header">
-      <h1>Hawking Radiation Simulator <small>Pro</small></h1>
-      <button id="toggleUI" class="toggle-btn" title="Toggle Settings">⚙</button>
+      <h1>ホーキング放射シミュレーター <small>Pro</small></h1>
+      <button id="toggleUI" class="toggle-btn" title="設定の表示/非表示">⚙</button>
     </div>
     <div id="uiContent" class="ui-content">
       <div class="grid">
       <div class="card">
-        <h3>Black Hole</h3>
-        <label>Mass (M<sub>☉</sub>)</label>
+        <h3>ブラックホール</h3>
+        <label>質量 (M<sub>☉</sub>)</label>
         <input id="massSlider" type="range" min="1e-10" max="50" step="1e-10" value="10">
         <input id="massNumber" type="number" min="1e-10" max="50" step="0.1" value="10">
         <div class="kv"><span>r<sub>s</sub></span><b id="rsMeters">—</b><span>m</span></div>
@@ -34,61 +43,88 @@
         <div class="kv"><span>Power ∝</span><b id="pRel">—</b><span>1/M²</span></div>
       </div>
       <div class="card">
-        <h3>Emission</h3>
-        <label>Pair creation intensity</label>
+        <h3>放射</h3>
+        <label>ペア生成強度</label>
         <input id="pairRate" type="range" min="0" max="1" step="0.001" value="0.45">
-        <div class="kv"><span>rate</span><b id="pairRateLabel">0.45</b></div>
-        <label>Particles (max)</label>
-        <input id="maxParticles" type="range" min="10000" max="200000" step="5000" value="100000">
-        <div class="kv"><span>count</span><b id="maxParticlesLabel">100000</b></div>
-        <label>Species (γ / ν / g)</label>
+        <div class="kv"><span>生成率</span><b id="pairRateLabel">0.45</b></div>
+        <label>パーティクル数（最大）</label>
+        <input id="maxParticles" type="range" min="100000" max="1000000" step="10000" value="100000">
+        <div class="kv"><span>個数</span><b id="maxParticlesLabel">100000</b></div>
+        <label>粒子種別 (γ / ν / g)</label>
         <div class="row">
           <input id="fPhoton" type="range" min="0" max="1" step="0.01" value="0.70">
           <input id="fNeutrino" type="range" min="0" max="1" step="0.01" value="0.25">
           <input id="fGraviton" type="range" min="0" max="1" step="0.01" value="0.05">
         </div>
-        <small>自動正規化します。</small>
+        <small style="display: block; margin-top: 8px; font-size: 0.75em; opacity: 0.7; line-height: 1.4;">
+          <span style="color: #ffcc99;">γ = フォトン（光子）</span> / 
+          <span style="color: #99e6ff;">ν = ニュートリノ</span> / 
+          <span style="color: #d9ccff;">g = グラビトン</span>
+        </small>
+        <small style="display: block; margin-top: 4px;">自動正規化します。</small>
+        <label style="margin-top: 12px;">粒子サイズ</label>
+        <div class="row" style="flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.85em; color: #ffcc99; min-width: 80px;">γ</span>
+            <input id="sizePhoton" type="range" min="5" max="50" step="1" value="20" style="flex: 1;">
+            <span id="sizePhotonLabel" style="font-size: 0.85em; min-width: 30px; text-align: right;">20</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.85em; color: #99e6ff; min-width: 80px;">ν</span>
+            <input id="sizeNeutrino" type="range" min="5" max="50" step="1" value="18" style="flex: 1;">
+            <span id="sizeNeutrinoLabel" style="font-size: 0.85em; min-width: 30px; text-align: right;">18</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.85em; color: #d9ccff; min-width: 80px;">g</span>
+            <input id="sizeGraviton" type="range" min="5" max="50" step="1" value="16" style="flex: 1;">
+            <span id="sizeGravitonLabel" style="font-size: 0.85em; min-width: 30px; text-align: right;">16</span>
+          </div>
+        </div>
       </div>
       <div class="card">
-        <h3>Lensing</h3>
-        <label>Enable gravitational lens</label>
+        <h3>重力レンズ</h3>
+        <label>重力レンズ効果を有効化</label>
         <input id="lensEnable" type="checkbox" checked>
-        <label>Lens strength</label>
+        <label>レンズ強度</label>
         <input id="lensStrength" type="range" min="0" max="2" step="0.001" value="0.65">
-        <div class="kv"><span>strength</span><b id="lensStrengthLabel">0.65</b></div>
-        <label>Chromatic aberration</label>
+        <div class="kv"><span>強度</span><b id="lensStrengthLabel">0.65</b></div>
+        <label>色収差</label>
         <input id="lensChrom" type="range" min="0" max="3" step="0.001" value="0.25">
       </div>
       <div class="card">
-        <h3>Controls</h3>
+        <h3>制御</h3>
                 <div class="row">
-                  <button id="resetBtn">Reset</button>
-                  <button id="pauseBtn">Pause</button>
-                  <button id="screenshotBtn">Screenshot</button>
+                  <button id="resetBtn">リセット</button>
+                  <button id="pauseBtn">一時停止</button>
+                  <button id="screenshotBtn">スクリーンショット</button>
                 </div>
                 <div class="row">
                   <a href="tech-specs.html" target="_blank" style="text-decoration: none;">
                     <button id="techSpecsBtn" style="width: 100%;">技術仕様を見る</button>
                   </a>
                 </div>
-                <label>View Mode</label>
+                <label>表示モード</label>
                 <select id="viewMode">
-                  <option value="3d">3D View</option>
-                  <option value="cross-section">Cross Section</option>
+                  <option value="3d">3D表示</option>
+                  <option value="cross-section">断面表示</option>
                 </select>
-                <label>Cross Section Plane</label>
+                <label>断面平面</label>
                 <select id="sectionPlane">
-                  <option value="xy">XY Plane (Top View)</option>
-                  <option value="xz">XZ Plane (Front View)</option>
-                  <option value="yz">YZ Plane (Side View)</option>
+                  <option value="xy">XY平面（上から見た図）</option>
+                  <option value="xz">XZ平面（正面図）</option>
+                  <option value="yz">YZ平面（側面図）</option>
                 </select>
-                <label>Visualization</label>
+                <label>可視化</label>
                 <div class="row">
-                  <label><input type="checkbox" id="showGravityWell"> Gravity Well</label>
-                  <label><input type="checkbox" id="showSpacetimeGrid"> Spacetime Grid</label>
+                  <label><input type="checkbox" id="showGravityWell"> 重力の井戸</label>
+                  <label><input type="checkbox" id="showSpacetimeGrid"> 時空グリッド</label>
                 </div>
                 <div class="row">
-                  <label><input type="checkbox" id="showHorizonHalo"> Event Horizon</label>
+                  <label><input type="checkbox" id="showHorizonHalo"> 事象の地平線</label>
+                </div>
+                <div class="row">
+                  <label><input type="checkbox" id="showEnergyStreamlines"> エネルギー流線</label>
+                  <label><input type="checkbox" id="showParticleTrails"> パーティクル軌跡</label>
                 </div>
         <p class="note">
           可視化用に物理を簡略化。T<sub>H</sub>に比例した黒体近似の擬似サンプルからエネルギーを引き、
@@ -103,5 +139,24 @@
       <span class="shot-icon">⚡</span>
       <span class="shot-label">フォトンショット</span>
     </button>
+    
+    <!-- カメラ操作ボタン（メニュー外） -->
+    <div class="camera-controls">
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraUp" title="上に移動 (↑)">↑</button>
+      </div>
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraLeft" title="左に移動 (←)">←</button>
+        <button class="camera-arrow-btn" id="cameraCenter" title="中央にリセット (R)">○</button>
+        <button class="camera-arrow-btn" id="cameraRight" title="右に移動 (→)">→</button>
+      </div>
+      <div class="camera-arrow-row">
+        <button class="camera-arrow-btn" id="cameraDown" title="下に移動 (↓)">↓</button>
+      </div>
+      <div class="camera-arrow-row camera-zoom-row">
+        <button class="camera-arrow-btn" id="cameraZoomIn" title="ズームイン (+ / ホイール上)">+</button>
+        <button class="camera-arrow-btn" id="cameraZoomOut" title="ズームアウト (- / ホイール下)">−</button>
+      </div>
+    </div>
   </body>
 </html>
